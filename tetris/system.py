@@ -235,7 +235,19 @@ class System:
         if (tspin or mini_tspin) and self._b2b:  # keep b2b
             self._b2b += 1
 
-        
+        if self.combo_count < 2:
+            pass
+        elif self.combo_count < 4:
+            line_send += 1
+        elif self.combo_count < 6:
+            line_send += 2
+        elif self.combo_count < 8:
+            line_send += 3
+        elif self.combo_count < 11:
+            line_send += 4
+        elif self.combo_count >= 11:
+            line_send += 5
+
         if tspin or mini_tspin or line_clears:
             if self._b2b > 1:
                 print("Back-to-back ", end="")
