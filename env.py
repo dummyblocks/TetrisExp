@@ -18,16 +18,15 @@ class SinglePlayerTetris(gym.Env):
         self.preview_num = 5
         self.main_screen = None
         self.clock = None
+        self.fps = 3  # three operation in 1 second
 
         self.game = tetris.Game(
             self.w,
             self.h,
             self.tile_size,
             self.preview_num,
-            60,
+            self.fps,
         )
-
-        self.fps = 60  # three operation in 1 second
 
         assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
@@ -297,10 +296,18 @@ class SinglePlayerTetris(gym.Env):
 env = SinglePlayerTetris(render_mode="human")
 print(env.reset())
 while True:
-    # action = env.action_space.sample()
+    action = env.action_space.sample()
     # 0: left, 1: right, 2: hard, 3: soft, 4: CCW, 5: CW, 6: noop, 7: hold
-    action = 6
 
+    pg.event.pump()
+
+    state, reward, term, trunc, info = env.step(action)
+    # print(state["field_view"])
+    if term:
+        env.reset()
+
+
+def handle_human_input():
     for event in pg.event.get():
         if event.type == pg.QUIT:
             env.close()
@@ -333,9 +340,3 @@ while True:
                 env.game.system.turn_off_auto_move_right()
             elif event.key == pg.K_s:
                 env.game.system.turn_off_sdf()
-
-    state, reward, term, trunc, info = env.step(action)
-    # print(state["field_view"])
-    if term:
-        env.reset()
-    pg.time.delay(16)
