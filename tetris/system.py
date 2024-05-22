@@ -104,8 +104,8 @@ class System:
         self._sdf_count = 0
         self._sdf_passive_stack_speed = 1
         self._sdf_active_stack_speed = 80
-        self._sdf_stack = 1
-        self._sdf_limit_second = 1
+        self._sdf_stack = self._sdf_passive_stack_speed
+        self._sdf_limit_second = 1  # 1 drop per second
 
         ## Delayed Auto Shift system
         self._r_das_count = 0
@@ -139,6 +139,7 @@ class System:
         self._judgement = []
         self._last_rot_point = 0  # remembers last rotation SRS state
 
+        self.last_line_cleared = 0
         self.last_lines_sent = 0
         self.total_lines_sent = 0
         self.total_lines_recv = 0
@@ -192,7 +193,10 @@ class System:
         for i in range(4):
             if self.field[self.h_padding][self._get_w_center() - 2 + i] is not False:
                 return True
-
+        if self.game_over_lock_out:
+            return True
+        if self.game_over_top_out:
+            return True
         return False
 
     def _add_judgement(self, judge):
@@ -219,6 +223,7 @@ class System:
                 )
             )
         )
+
         tspin = 1 if T_SPIN in judgements else 0
         mini_tspin = 1 if T_MINI in judgements else 0
 
@@ -234,11 +239,6 @@ class System:
         elif line_clears:
             score += lc_table[line_clears]
             line_send += lc_linesent[line_clears]
-
-        if D_SOFT in judgements:
-            score += drop_table[0]
-        if D_HARD in judgements:
-            score += drop_table[1]
 
         if line_clears == 4 or (tspin or mini_tspin) and line_clears:  # start b2b
             if self._b2b:
@@ -272,6 +272,8 @@ class System:
 
         if 0 < line_clears < 4:  # b2b crack
             self._b2b = 0
+
+        self.last_line_cleared = line_clears
         self._last_score = score
         self.total_score += score
         if line_send:
@@ -284,7 +286,6 @@ class System:
     def hard_drop(self):
         while self._is_enable_move_y():
             self._move_y()
-            self._add_judgement(D_HARD)
         self._land_for_next_mino()
 
     def try_move_right(self):
@@ -302,8 +303,6 @@ class System:
     def try_soft_drop(self):
         if self._is_enable_move_y():
             self._move_y()
-            self._add_judgement(D_SOFT)
-            self._digest_judgement()  # only for soft drop
         elif self._timeout_enable_land:
             self._land_for_next_mino()
 

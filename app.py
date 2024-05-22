@@ -61,7 +61,7 @@ def main():
 
     ## tetris configuration
     W, H = 10, 20
-    TILE_SIZE = 40
+    TILE_SIZE = 30
     SCREEN_MARGIN = 20
     TILE_PREVIEW_COUNT = 5
 
