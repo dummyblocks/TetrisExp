@@ -2,6 +2,8 @@ from copy import deepcopy
 from random import choice
 
 from .configuration import *
+from collections import deque
+import random
 
 
 class System:
@@ -69,6 +71,10 @@ class System:
         self.h = h
         self.h_padding = h
         self.preview_num = preview_num
+        self.game_over_top_out = False
+        self.game_over_lock_out = (
+            False  # lock new blocks on hidden area (possible due to SRS)
+        )
         self.init()
 
     def init(self):
@@ -78,6 +84,7 @@ class System:
         self.field = [
             [False for _ in range(self.w)] for _ in range(self.h + self.h_padding)
         ]
+        self._garbage_new_line = [["G" for _ in range(self.w)]]
         self._field_new_line = [[False for _ in range(self.w)]]
         self._init_mino_pos = self._get_init_mino_pos()
         self._all_bag_cases = self._get_all_numbers_of_case(len(self._mino_list))
@@ -90,7 +97,7 @@ class System:
 
         ## timeout land system
         self._timeout_land_count = 0
-        self._timeout_land_limit_second = 1
+        self._timeout_land_limit_second = 0.5
         self._timeout_enable_land = False
 
         ## soft drop factor system
@@ -130,12 +137,19 @@ class System:
         self.total_score = 0
         self._last_score = 0
         self._judgement = []
+        self._last_rot_point = 0  # remembers last rotation SRS state
 
         self.last_lines_sent = 0
         self.total_lines_sent = 0
-        self.hole_count = 0
+        self.total_lines_recv = 0
+        self._garbage_delay = 0.5
+        self.garbage_pos = random.randint(0, self.w - 1)
+        self.garbage_pos_prob = 0.1
 
-        self._last_rot_point = 0  # remembers last rotation SRS state
+        self.receive_queue = deque()
+        self.receive_queue_lines = 0
+        self.incoming_garbage_next = 0
+        self.outgoing_garbage = 0
 
         self.init_next_mino()
 
@@ -172,6 +186,7 @@ class System:
             self._check_l_das_timer(fps)
             self._check_r_arr_timer(fps)
             self._check_l_arr_timer(fps)
+            self._garbage_queue_update(fps)
 
     def is_game_over(self):
         for i in range(4):
@@ -180,10 +195,10 @@ class System:
 
         return False
 
-    def add_judgement(self, judge):
+    def _add_judgement(self, judge):
         self._judgement.append(judge)
 
-    def digest_judgement(self):
+    def _digest_judgement(self):
 
         if len(self._judgement) == 0:  # fast return
             self._last_score = 0
@@ -255,7 +270,7 @@ class System:
                 f"{'T-Spin ' if tspin else ('Mini T-Spin ' if mini_tspin else '')}{['','Single','Double','Triple','Tetris'][line_clears]}"
             )
 
-        elif 0 < line_clears < 4:  # b2b crack
+        if 0 < line_clears < 4:  # b2b crack
             self._b2b = 0
         self._last_score = score
         self.total_score += score
@@ -269,7 +284,7 @@ class System:
     def hard_drop(self):
         while self._is_enable_move_y():
             self._move_y()
-            self.add_judgement(D_HARD)
+            self._add_judgement(D_HARD)
         self._land_for_next_mino()
 
     def try_move_right(self):
@@ -287,7 +302,8 @@ class System:
     def try_soft_drop(self):
         if self._is_enable_move_y():
             self._move_y()
-            self.add_judgement(D_SOFT)
+            self._add_judgement(D_SOFT)
+            self._digest_judgement()  # only for soft drop
         elif self._timeout_enable_land:
             self._land_for_next_mino()
 
@@ -365,6 +381,25 @@ class System:
             if not (status1 or status2 or self._is_field_filled(npos)):
                 return False  # not filled -> Open!
         return True  # Hole!!
+
+    def receive_garbage(self, lines):
+        self.receive_queue.append([lines, 0])  # lines, framecount
+        self.receive_queue_lines += lines
+        self.total_lines_recv += lines
+
+    def _garbage_queue_update(self, fps):
+
+        # update time
+        for i in range(len(self.receive_queue)):
+            self.receive_queue[i][1] += 1
+
+        while len(self.receive_queue):
+            if self.receive_queue[0][1] > self._garbage_delay * fps:
+                lines, delay = self.receive_queue.popleft()
+                self.receive_queue_lines -= lines
+                self.incoming_garbage_next += lines
+            else:
+                break
 
     def turn_on_auto_move_right(self):
         self.turn_off_auto_move_right()
@@ -531,12 +566,44 @@ class System:
         _tspin_result = self._check_tspin()
         _just_cleaned_line = self._try_clean_filled_line()
         self._update_combo_count(_just_cleaned_line)
-        self.add_judgement(_just_cleaned_line)
+        self._add_judgement(_just_cleaned_line)
 
         if _tspin_result:
-            self.add_judgement(T_SPIN if _tspin_result == 2 else T_MINI)
+            self._add_judgement(T_SPIN if _tspin_result == 2 else T_MINI)
+
+        line_sent = self._digest_judgement()
+        self._apply_garbage_lines(line_sent)
 
         self.init_next_mino()
+
+    def outgoing_garbage_send(self):
+        r = self.outgoing_garbage
+        self.outgoing_garbage = 0
+        return r
+
+    def _apply_garbage_lines(self, line_sent):
+        diff = self.incoming_garbage_next - line_sent
+        if diff > 0:
+            # get garbage lines
+            for i in range(diff):
+                a = sum(self.field[0])
+                if a:
+                    self.game_over_top_out = True
+                del self.field[0]
+                newline = deepcopy(self._garbage_new_line)
+                newline[0][self.garbage_pos] = False
+                self.field.extend(newline)
+                if random.random() < self.garbage_pos_prob:
+                    self.garbage_pos = random.randint(0, self.w - 1)
+            self.incoming_garbage_next = 0
+
+        elif diff < 0:  # counterattack
+            self.outgoing_garbage = -diff
+            # no garbage gain, but produce  garbages
+        else:
+            # no effect: perfect defense
+            self.incoming_garbage_next = 0
+            self.outgoing_garbage = 0
 
     def _update_combo_count(self, cleaned_line):
         if cleaned_line > 0:

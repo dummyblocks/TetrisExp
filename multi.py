@@ -76,27 +76,42 @@ def main():
     preview_area = (5 * TILE_SIZE, 3 * TILE_SIZE * TILE_PREVIEW_COUNT)
     _main_x_size = (
         left_margin
-        + hold_area[X]
-        + screen_margin
-        + play_area[X]
-        + screen_margin
-        + preview_area[X]
+        + (
+            hold_area[X]
+            + screen_margin
+            + play_area[X]
+            + screen_margin
+            + preview_area[X]
+        )
+        * 2
+        + screen_margin * 4
         + right_margin
     )
     _main_y_size = top_margin + play_area[Y] + bot_margin
     main_area = (_main_x_size, _main_y_size)
-
+    second_gui_offset = left_margin + (
+        hold_area[X] + screen_margin + play_area[X] + screen_margin + preview_area[X]
+    )
     ## game init
     pg.init()
     game = tetris.Game(W, H, TILE_SIZE, TILE_PREVIEW_COUNT, MAX_FPS)
+    game2 = tetris.Game(W, H, TILE_SIZE, TILE_PREVIEW_COUNT, MAX_FPS)
 
     ## screen
     main_screen = pg.display.set_mode(main_area)
     background_screen = pg.Surface(main_area)
+
+    ## p1 screen
     hold_screen = pg.Surface(hold_area)
     info_screen = pg.Surface(info_area)
     play_screen = pg.Surface(play_area)
     preview_screen = pg.Surface(preview_area)
+
+    ## p2 screen
+    hold_screen_2 = pg.Surface(hold_area)
+    info_screen_2 = pg.Surface(info_area)
+    play_screen_2 = pg.Surface(play_area)
+    preview_screen_2 = pg.Surface(preview_area)
 
     ## clock
     clock = pg.time.Clock()
@@ -108,6 +123,7 @@ def main():
 
     ## game start
     game.system.init()
+    game2.system.init()
     application_running = True
 
     # font bright
@@ -135,6 +151,36 @@ def main():
                 top_margin,
             ),
         )
+
+        main_screen.blit(background_screen, (second_gui_offset, 0))
+        main_screen.blit(hold_screen_2, (left_margin + second_gui_offset, top_margin))
+        main_screen.blit(
+            info_screen_2,
+            (
+                left_margin + second_gui_offset,
+                top_margin + hold_area[Y] + screen_margin,
+            ),
+        )
+        main_screen.blit(
+            play_screen_2,
+            (
+                left_margin + hold_area[X] + screen_margin + second_gui_offset,
+                top_margin,
+            ),
+        )
+        main_screen.blit(
+            preview_screen_2,
+            (
+                left_margin
+                + hold_area[X]
+                + screen_margin
+                + play_area[X]
+                + screen_margin
+                + second_gui_offset,
+                top_margin,
+            ),
+        )
+
         main_screen.blit(
             fps_font.render(str(int(fps)), FONT_ANTIALIASING, pg.Color("YELLOW")),
             FPS_POS,
@@ -144,6 +190,9 @@ def main():
         hold_screen.fill(pg.Color("BLACK"))
         play_screen.fill(pg.Color("BLACK"))
         preview_screen.fill(pg.Color("BLACK"))
+        hold_screen_2.fill(pg.Color("BLACK"))
+        play_screen_2.fill(pg.Color("BLACK"))
+        preview_screen_2.fill(pg.Color("BLACK"))
 
         ## draw info
         info_screen.fill(pg.Color("BLACK"))
@@ -154,9 +203,33 @@ def main():
                 ),
                 (screen_margin, screen_margin),
             )
+        info_screen_2.fill(pg.Color("BLACK"))
+        if game2.system.combo_count > 0:
+            info_screen_2.blit(
+                info_font.render(
+                    str(f"Combo : {game2.system.combo_count}"), 1, pg.Color("GRAY")
+                ),
+                (screen_margin, screen_margin),
+            )
 
         pps_minutes = int(game.system.spend_second) // 60
         pps_seconds = game.system.spend_second - pps_minutes * 60
+
+        ## game handler
+        game.system.frame_check(fps)
+        game2.system.frame_check(fps)
+        next_state = game_handler(game)  # hard drop or something
+        next_state2 = game_handler(game2)
+
+        garbage_lines1to2 = game.system.outgoing_garbage_send()
+        garbage_lines2to1 = game2.system.outgoing_garbage_send()
+        game.system.receive_garbage(garbage_lines2to1)
+        game2.system.receive_garbage(garbage_lines1to2)
+
+        if next_state is False or next_state2 is False:
+            application_running = False
+            break
+
         info_screen.blit(
             info_font.render(
                 f"Time : {pps_minutes:d}:{pps_seconds:06.3f}", 1, pg.Color("GRAY")
@@ -185,17 +258,6 @@ def main():
             ),
             (screen_margin, screen_margin * 7),
         )
-
-        ## game handler
-        game.system.frame_check(fps)
-        next_state = game_handler(game)  # hard drop or something
-
-        garbage_lines = game.system.outgoing_garbage_send()
-        game.system.receive_garbage(garbage_lines)
-
-        if next_state is False:
-            application_running = False
-            break
 
         info_screen.blit(
             info_font.render(f"Score : {game.system.total_score}", 1, pg.Color("GRAY")),
@@ -231,6 +293,71 @@ def main():
             (screen_margin, screen_margin * 14),
         )
 
+        info_screen_2.blit(
+            info_font.render(
+                f"Time : {pps_minutes:d}:{pps_seconds:06.3f}", 1, pg.Color("GRAY")
+            ),
+            (screen_margin, screen_margin * 3),
+        )
+        info_screen_2.blit(
+            info_font.render(
+                f"Pieces : {game.system.used_mino_count}", 1, pg.Color("GRAY")
+            ),
+            (screen_margin, screen_margin * 5),
+        )
+
+        pieces_per_seconds_2 = (
+            game2.system.used_mino_count / game2.system.spend_second
+            if game2.system.spend_second > 0
+            else 0
+        )
+        info_screen_2.blit(
+            info_font.render(f"PPS : {pieces_per_seconds_2:.3f}", 1, pg.Color("GRAY")),
+            (screen_margin, screen_margin * 6),
+        )
+        info_screen_2.blit(
+            info_font.render(
+                f"Lines : {game.system.cleaned_line}", 1, pg.Color("GRAY")
+            ),
+            (screen_margin, screen_margin * 7),
+        )
+
+        info_screen_2.blit(
+            info_font.render(
+                f"Score : {game2.system.total_score}", 1, pg.Color("GRAY")
+            ),
+            (screen_margin, screen_margin * 9),
+        )
+        info_screen_2.blit(
+            info_font.render(
+                f"Lines Sent : {game2.system.total_lines_sent}", 1, pg.Color("GRAY")
+            ),
+            (screen_margin, screen_margin * 10),
+        )
+        info_screen_2.blit(
+            info_font.render(
+                f"Last Sent : {game2.system.last_lines_sent}", 1, pg.Color("YELLOW")
+            ),
+            (screen_margin, screen_margin * 11),
+        )
+
+        info_screen_2.blit(
+            info_font.render(
+                f"Waiting Garbages : {game2.system.receive_queue_lines}",
+                1,
+                pg.Color("ORANGE"),
+            ),
+            (screen_margin, screen_margin * 13),
+        )
+        info_screen_2.blit(
+            info_font.render(
+                f"Incoming Garbages : {game2.system.incoming_garbage_next}",
+                1,
+                pg.Color("ORANGE"),
+            ),
+            (screen_margin, screen_margin * 14),
+        )
+
         ## painter
         game.painter.draw_ghost_mino(play_screen, game.system.get_ghost_mino())
         game.painter.draw_current_mino(play_screen, game.system.get_current_mino())
@@ -240,6 +367,15 @@ def main():
         )
         game.painter.draw_field(play_screen, game.system.get_draw_field())
         game.painter.draw_grid(play_screen)
+        ## paint 2
+        game2.painter.draw_ghost_mino(play_screen_2, game2.system.get_ghost_mino())
+        game2.painter.draw_current_mino(play_screen_2, game2.system.get_current_mino())
+        game2.painter.draw_hold_mino(hold_screen_2, game2.system.get_hold_mino())
+        game2.painter.draw_preview_mino_list(
+            preview_screen_2, game2.system.get_preview_mino_list()
+        )
+        game2.painter.draw_field(play_screen_2, game2.system.get_draw_field())
+        game2.painter.draw_grid(play_screen_2)
 
         ## pygame display update
         pg.display.flip()
