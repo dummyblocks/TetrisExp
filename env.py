@@ -53,7 +53,7 @@ class SinglePlayerTetris(gym.Env):
             }  # combo, b2b, ......
         )
 
-    def reset(self):
+    def reset(self, seed, options):
         self.reward = 0
         self.game.system.init()
         state = self._get_obs_from_game()
@@ -81,6 +81,8 @@ class SinglePlayerTetris(gym.Env):
             (self.game.system._bag + self.game.system._next_bag)[: self.preview_num],
             dtype=np.int64,
         )
+        if len(self.game.system._bag + self.game.system._next_bag) < self.preview_num:
+            print(self.game.system._bag, self.game.system._next_bag)
         lc = self.game.system.last_line_cleared
         self.last_line_cleared = lc
         self.game.system.last_line_cleared = 0
@@ -292,21 +294,6 @@ class SinglePlayerTetris(gym.Env):
             ## pygame display update
             pg.display.flip()
 
-
-env = SinglePlayerTetris(render_mode="human")
-print(env.reset())
-while True:
-    action = env.action_space.sample()
-    # 0: left, 1: right, 2: hard, 3: soft, 4: CCW, 5: CW, 6: noop, 7: hold
-
-    pg.event.pump()
-
-    state, reward, term, trunc, info = env.step(action)
-    # print(state["field_view"])
-    if term:
-        env.reset()
-
-
 def handle_human_input():
     for event in pg.event.get():
         if event.type == pg.QUIT:
@@ -340,3 +327,20 @@ def handle_human_input():
                 env.game.system.turn_off_auto_move_right()
             elif event.key == pg.K_s:
                 env.game.system.turn_off_sdf()
+
+
+
+if __name__ == "__main__":
+
+    env = SinglePlayerTetris(render_mode="human")
+    print(env.reset())
+    while True:
+        action = env.action_space.sample()
+        # 0: left, 1: right, 2: hard, 3: soft, 4: CCW, 5: CW, 6: noop, 7: hold
+
+        pg.event.pump()
+
+        state, reward, term, trunc, info = env.step(action)
+        # print(state["field_view"])
+        if term:
+            env.reset()

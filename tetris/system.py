@@ -4,6 +4,7 @@ from random import choice
 from .configuration import *
 from collections import deque
 import random
+from copy import deepcopy
 
 
 class System:
@@ -88,9 +89,9 @@ class System:
         self._field_new_line = [[False for _ in range(self.w)]]
         self._init_mino_pos = self._get_init_mino_pos()
         self._all_bag_cases = self._get_all_numbers_of_case(len(self._mino_list))
-        self._bag, self._next_bag = choice(self._all_bag_cases), choice(
+        self._bag, self._next_bag = deepcopy(choice(self._all_bag_cases)), deepcopy(choice(
             self._all_bag_cases
-        )
+        ))
 
         ## fps
         self.spend_second = 0
@@ -685,9 +686,10 @@ class System:
         return deepcopy(self._mino_list[mino_num])
 
     def _get_next_mino(self):
+        # BUG FIX : there are some cases that self._next_bag is empty.
         if len(self._bag) == 0:
             self._bag = self._next_bag
-            self._next_bag = choice(self._all_bag_cases)
+            self._next_bag = deepcopy(choice(self._all_bag_cases))
         self._curr_mino_num = self._bag.pop(0)
         return deepcopy(self._mino_list[self._curr_mino_num])
 
