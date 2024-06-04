@@ -1,14 +1,7 @@
-# pygame Tetris
+# pygame Tetris experiment
 
-## function
+forked Tetris environment from [dummyblocks/TetrisEnv](https://github.com/dummyblocks/TetrisEnv)
 
-- tetris basic rule
-- super rotation
-- Hold
-- 5 next
-- timer
+## models
 
-## reference
-
-- https://tetr.io/
-- https://tetris.fandom.com/wiki/SRS
+PPO + RND + SMiRL
