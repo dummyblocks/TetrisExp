@@ -9,7 +9,7 @@ class SinglePlayerTetris(gym.Env):
 
     metadata = {"render_modes": ["human"], "render_fps": 60}
 
-    def __init__(self, render_mode=None, fps=3, fast_soft=False, draw_ghost=False) -> None:
+    def __init__(self, render_mode=None, fps=3, fast_soft=True, draw_ghost=True) -> None:
         super().__init__()
         self.w = 10
         self.h = 20
@@ -33,13 +33,15 @@ class SinglePlayerTetris(gym.Env):
         assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
 
-        self.action_space = spaces.Discrete(8)
+        #self.action_space = spaces.Discrete(8)
+        self.action_space = spaces.Discrete(7)
         # 0: left, 1: right, 2: hard, 3: soft, 4: CCW, 5: CW, 6: noop, 7: hold
 
         self.observation_space = spaces.Dict(
             {
-                "field": spaces.Box(0, 1, (self.h, self.w), dtype=np.int64),
-                "field_view": spaces.Box(0, 3, (self.h, self.w), dtype=np.int64),
+                #"field": spaces.Box(0, 1, (self.h, self.w), dtype=np.int64),
+                #"field_view": spaces.Box(0, 3, (self.h, self.w), dtype=np.int64),
+                "image": spaces.Box(0, 255, (1, self.h*4, self.w*4), dtype=np.uint8),
                 "mino_pos": spaces.Box(
                     np.array([0, 0]),
                     np.array([self.w - 1, 2 * self.h - 1]),
@@ -62,7 +64,7 @@ class SinglePlayerTetris(gym.Env):
                 self.game.system.try_soft_drop,
                 self.game.system.try_rotate_rcw,
                 self.game.system.try_rotate_cw,
-                (lambda *_: None),
+                #(lambda *_: None),
                 self.game.system.hold,
             ]
         if self.fast_sd:
@@ -80,17 +82,17 @@ class SinglePlayerTetris(gym.Env):
 
     def _get_obs_from_game(self):
         field = np.array(self.game.system.field[self.h :], dtype=bool) * 1
-        field_with_cur_mino = np.array(self.game.system.field[self.h :], dtype=bool) * 1
+        field_with_cur_mino = np.array(self.game.system.field[self.h :], dtype=bool) * 255
 
         mino = self.game.system.get_current_mino()
         
         for block in mino.blocks:
             if block.x >= 0 and block.y >= 0:
-                field_with_cur_mino[block.y, block.x] = 2
+                field_with_cur_mino[block.y, block.x] = 85
         if self.draw_ghost:
             for block in self.game.system.get_ghost_mino().blocks:
                 if block.x >= 0 and block.y >= 0:
-                    field_with_cur_mino[block.y, block.x] = 3
+                    field_with_cur_mino[block.y, block.x] = 170
 
         mino_id = self.game.system._curr_mino_num
         mino_pos = np.array([mino.center.x, mino.center.y], dtype=np.int64)
@@ -120,8 +122,9 @@ class SinglePlayerTetris(gym.Env):
         holdpossible = 0 if self.game.system._hold_used else 1
 
         state = {
-            "field": field,
-            "field_view": field_with_cur_mino,
+            #"field": field,
+            #"field_view": field_with_cur_mino,
+            "image": np.kron(field_with_cur_mino.reshape((1, *field_with_cur_mino.shape)).astype(np.uint8),np.ones((4,4),np.uint8)),
             "mino_pos": mino_pos,
             "mino_rot": mino_rot,
             "mino": mino_id,
@@ -147,6 +150,10 @@ class SinglePlayerTetris(gym.Env):
         self.state = self._get_obs_from_game()
         self.reward = self.get_reward()
         terminated = self.game.system.is_game_over()
+        if terminated:
+            self.reward = -100
+        if self.reward==0:
+            self.reward = -0.1
         if self.render_mode == "human":
             self.render()
         return self.state, self.reward, terminated, False, {}
