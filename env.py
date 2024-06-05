@@ -3,13 +3,13 @@ from gymnasium import spaces
 import numpy as np
 import tetris
 import pygame as pg
-
+import time
 
 class SinglePlayerTetris(gym.Env):
 
     metadata = {"render_modes": ["human"], "render_fps": 60}
 
-    def __init__(self, render_mode=None) -> None:
+    def __init__(self, render_mode=None, fps=3) -> None:
         super().__init__()
         self.w = 10
         self.h = 20
@@ -18,7 +18,7 @@ class SinglePlayerTetris(gym.Env):
         self.preview_num = 5
         self.main_screen = None
         self.clock = None
-        self.fps = 3  # three operation in 1 second
+        self.fps = fps  # three operation in 1 second
 
         self.game = tetris.Game(
             self.w,
@@ -53,7 +53,8 @@ class SinglePlayerTetris(gym.Env):
             }  # combo, b2b, ......
         )
 
-    def reset(self, seed, options):
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed, options=options)
         self.reward = 0
         self.game.system.init()
         state = self._get_obs_from_game()
@@ -294,21 +295,27 @@ class SinglePlayerTetris(gym.Env):
             ## pygame display update
             pg.display.flip()
 
-def handle_human_input():
+def handle_human_input(env, long_move=False, long_drop=False):
+    action = 6
     for event in pg.event.get():
         if event.type == pg.QUIT:
             env.close()
             exit()
-
+        #action = 6
         if event.type == pg.KEYDOWN:
             if event.key == pg.K_a:
+                if long_move:
+                    env.game.system.turn_on_auto_move_left()
                 action = 0
             elif event.key == pg.K_d:
+                if long_move:
+                    env.game.system.turn_on_auto_move_right()
                 action = 1
             elif event.key == pg.K_w:
                 action = 2
             elif event.key == pg.K_s:
-                env.game.system.turn_on_sdf()
+                if long_drop:
+                    env.game.system.turn_on_sdf()
                 action = 3
             elif event.key == pg.K_q:
                 action = 4
@@ -320,27 +327,33 @@ def handle_human_input():
                 env.close()
                 exit()
         if event.type == pg.KEYUP:
-            if event.key == pg.K_a:
-
+            if event.key == pg.K_a and long_move:
                 env.game.system.turn_off_auto_move_left()
-            elif event.key == pg.K_d:
+            elif event.key == pg.K_d and long_move:
                 env.game.system.turn_off_auto_move_right()
-            elif event.key == pg.K_s:
+            elif event.key == pg.K_s and long_drop:
                 env.game.system.turn_off_sdf()
-
+        #return action
+    return action
 
 
 if __name__ == "__main__":
 
-    env = SinglePlayerTetris(render_mode="human")
+    control = True
+    fps = 60
+    env = SinglePlayerTetris(render_mode="human",fps=fps)
     print(env.reset())
     while True:
-        action = env.action_space.sample()
-        # 0: left, 1: right, 2: hard, 3: soft, 4: CCW, 5: CW, 6: noop, 7: hold
 
-        pg.event.pump()
+        if control:
+            action = handle_human_input(env, long_drop=True, long_move=True)
+        else:
+            pg.event.pump()
+            action = env.action_space.sample()
+        # 0: left, 1: right, 2: hard, 3: soft, 4: CCW, 5: CW, 6: noop, 7: hold
 
         state, reward, term, trunc, info = env.step(action)
         # print(state["field_view"])
         if term:
             env.reset()
+        time.sleep(1./fps)

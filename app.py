@@ -19,8 +19,10 @@ def game_handler(game):
             return False
         if event.type == pg.KEYDOWN:
             if event.key == pg.K_LEFT:
+                game.system.turn_on_auto_move_left()
                 game.system.try_move_left()
             elif event.key == pg.K_RIGHT:
+                game.system.turn_on_auto_move_right()
                 game.system.try_move_right()
             elif event.key == pg.K_DOWN:
                 game.system.turn_on_sdf()

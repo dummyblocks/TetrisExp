@@ -290,22 +290,28 @@ class System:
         self._land_for_next_mino()
 
     def try_move_right(self):
-        self.turn_on_auto_move_right()
+        #self.turn_on_auto_move_right()
         self._try_move_x(1)
 
     def try_move_left(self):
-        self.turn_on_auto_move_left()
+        #self.turn_on_auto_move_left()
         self._try_move_x(-1)
 
     def _try_move_x(self, dx):
         if self._is_enable_move_x(dx):
             self._move_x(dx)
 
-    def try_soft_drop(self):
+    def try_soft_drop(self): # manual soft drop
+        if self._is_enable_move_y():
+            self._move_y()
+        self._sdf_count = 0
+
+    def try_auto_drop(self): # auto soft drop
         if self._is_enable_move_y():
             self._move_y()
         elif self._timeout_enable_land:
             self._land_for_next_mino()
+        self._sdf_count = 0
 
     def try_rotate_rcw(self):
         self._try_rotate(RCW)
@@ -480,7 +486,7 @@ class System:
     def _check_y_gravity_time(self, fps):
         self._sdf_count += self._sdf_stack
         if self._sdf_count > self._sdf_limit_second * fps:
-            self.try_soft_drop()
+            self.try_auto_drop()
             self._sdf_count = 0
 
     def _check_land_time(self, fps):
