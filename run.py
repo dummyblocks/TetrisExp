@@ -23,30 +23,39 @@ if __name__ == "__main__":
 
     print('Load environment..')
 
+    envs = []
+
     if args.env_name == 'SinglePlayerTetris':
-        env = SinglePlayerTetris()
-        env = gym.wrappers.FlattenObservation(env)
-    else:
-        env = gym.make(args.env_name)
-    input_size = env.observation_space.shape[0]
+        for i in range(args.num_worker):
+            if i == 0 and args.render:
+                env = SinglePlayerTetris(render_mode='human')
+                env = gym.wrappers.FlattenObservation(env)
+                envs.append(env)
+            else:
+                env = SinglePlayerTetris()
+                env = gym.wrappers.FlattenObservation(env)
+                envs.append(env)
+    # else:
+    #     env = gym.make(args.env_name)
+    input_size = envs[0].observation_space.shape[0]
     hidden_size = 512
     num_layers = 5
-    output_size = env.action_space.n
+    output_size = envs[0].action_space.n
 
-    smirl_size = env.get_wrapper_attr('w') * env.get_wrapper_attr('h')
+    smirl_size = envs[0].get_wrapper_attr('w') * envs[0].get_wrapper_attr('h')
     
     if 's' in args.algo:
         # add smirl state in input
         input_size += smirl_size + 1
 
-    env.close()
+    envs[0].close()
 
     if not os.path.exists(args.save_dir):
         os.makedirs(args.save_dir)
 
     writer = SummaryWriter(log_dir=args.log_dir)
 
-    envs = Envs(env, args.env_name, args.num_worker)
+    envs = Envs(envs, args.env_name, args.num_worker)
 
     print('Environment loading done..')
 
@@ -88,4 +97,4 @@ if __name__ == "__main__":
     print('Model created..')
     print('Start training..')
     
-    agent.train(envs, args.save_dir, args.save_interval, args.render, writer)
+    agent.train(envs, args.save_dir, args.save_interval, writer)

@@ -25,15 +25,15 @@ class Envs:
     '''
     A vector of multiple environments for asynchronous training
     '''
-    def __init__(self, env, name, capacity):
+    def __init__(self, envs, name, capacity):
         self.nenvs = capacity
-        self.env = env
+        self.env = envs[0]
         self.name = name
         self.waiting = False
         self.closed = False
         self.remotes, self.work_remotes = zip(*[Pipe() for _ in range(capacity)])
         self.ps = [Process(target=worker, args=(work_remote, remote, env))
-                   for (work_remote, remote) in zip(self.work_remotes, self.remotes)]
+                   for (work_remote, remote, env) in zip(self.work_remotes, self.remotes, envs)]
         print('Start processes..')
         for process in self.ps:
             process.daemon = True

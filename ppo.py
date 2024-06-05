@@ -18,6 +18,10 @@ class PPO:
     '''
     Multi-agent PPO with some possible RND or SMiRL
     '''
+
+    t = 0
+
+
     def __init__(self, actor: ActorNN, critic: CriticNN, actor_lr, critic_lr, epsilon,
                  episode_num, episode_len, norm_len, batch_size, lamda, #memory_size, lamda,
                  gamma_ext, gamma_int, v_coef, ent_coef, ext_coef, int_coef, epochs,
@@ -52,7 +56,6 @@ class PPO:
 
         if use_smirl:
             self.smirl_nn = SMiRL(smirl_arg)
-            self.memory.set_use_int()
 
     @torch.no_grad()
     def act(self, state, training=True):
@@ -86,24 +89,28 @@ class PPO:
         
         print('Normalization done.')
     
-    def step(self, envs, s, render):
+    def step(self, envs, s):
         tot_s, tot_re, tot_done, tot_ns, tot_a = [], [], [], [], []
-        tot_ri, tot_ve, tot_vi, tot_prob = [], [], [], []
+        tot_ri, tot_ve, tot_vi, tot_prob, tot_smirl_r = [], [], [], [], []
         for t in range(self.episode_len):
-            if render:
-                envs.render()
             a, _, _, result = self.actor(s)
             ve, vi = self.critic(s)
             ns, re, done, _, _ = envs.step(a)
 
             if self.use_smirl:
-                for _s, _ns in zip(s, ns):
+                aug_ns_ = []
+                smirl_r = []
+                for i, (_s, _ns) in enumerate(zip(s, ns)):
                     ri_smirl = self.smirl_nn.logprob(_ns)
-                    re += ri_smirl
+                    re[i] += ri_smirl
                     aug_s = np.hstack([_s, self.smirl_nn.get_params(), t])
                     self.smirl_nn.add(_ns)
                     aug_ns = np.hstack([_ns, self.smirl_nn.get_params(), t+1])
-                    self.memory.push(aug_s, a, re, aug_ns, done)
+                    aug_ns_.append(aug_ns)
+                    self.memory.push(_s, a[i], re[i], aug_ns, done[i])
+                    smirl_r.append(ri_smirl)
+                ns = np.stack(aug_ns_)
+                tot_smirl_r.append(np.stack(smirl_r))
 
             if self.use_rnd:
                 ri_rnd = self.rnd_network.eval_int(((ns - self.obs_rms.mean) / np.sqrt(self.obs_rms.var)).clip(-5, 5))
@@ -126,7 +133,11 @@ class PPO:
             if t < self.episode_len - 1:
                 for i, term in enumerate(done):
                     if term:
-                        s[i] = envs.reset_idx(i)
+                        # observation_size = 457
+                        s[i, :457] = envs.reset_idx(i)
+
+        if self.use_smirl:
+            print(tot_smirl_r[0])
 
         if self.use_rnd:
             ve, vi = self.critic(s)
@@ -156,19 +167,17 @@ class PPO:
         else:
             return self.update_vanilla(), s
 
-    def train(self, envs, save_dir, save_freq, render, writer):
+    def train(self, envs, save_dir, save_freq, writer):
         state = envs.reset()
-        if self.use_rnd:
-            self.collect_state_statistics(envs, state)
-        
         if self.use_smirl:
             state = np.stack([np.hstack([s, self.smirl_nn.get_params(), 0]) for s in state])
-            print(state.shape)
+        if self.use_rnd:
+            self.collect_state_statistics(envs, state)
         t = 1
         while True:
             self.memory.clear()
 
-            result, state = self.step(envs, state, render)
+            result, state = self.step(envs, state)
 
             if t % save_freq == 0:
                 print(f'Episode {t} : {result}')
@@ -231,8 +240,10 @@ class PPO:
         result = {'actor_loss' : np.mean(actor_losses),
                   'critic_loss' : np.mean(critic_losses),
                   'entropy_bonus' : np.mean(entropy_bonuses),
-                  'max_return' : torch.max(ret).item()}
-        
+                  'min_return' : torch.min(ret).item(),
+                  'max_return' : torch.max(ret).item(),
+                  'avg_return' : torch.mean(ret).item()} 
+
         return result
 
     def update(self, s, a, ns, re, ri, ve, vi, done, prob, workers):
@@ -290,14 +301,16 @@ class PPO:
                 critic_losses.append(critic_loss.item())
                 entropy_bonuses.append(-entropy_bonus.item())
 
-            print(f"Epoch : {epoch+1}, loss : {loss.item():.6f}")
+            print(f"[Epoch {epoch+1}] loss : {loss.item():.6f}")
         
         result = {'actor_loss' : np.mean(actor_losses),
                   'critic_loss' : np.mean(critic_losses),
                   'entropy_bonus' : np.mean(entropy_bonuses),
                   'max_return_extrinsic' : torch.max(target_ext).item(),
                   'max_return_intrinsic' : torch.max(target_int).item(),
-                  'max_return' : torch.max(target_ext + target_int).item()}
+                  'min_return' : torch.min(target_ext + target_int).item(),
+                  'max_return' : torch.max(target_ext + target_int).item(),
+                  'avg_return' : torch.mean(target_ext + target_int).item()}
         
         return result
 

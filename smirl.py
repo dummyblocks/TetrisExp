@@ -1,6 +1,8 @@
 import torch
 import numpy as np
 
+REG = 255.
+
 class SMiRL:
     def __init__(self, dim):
         self.buffer = np.zeros(dim)
@@ -11,17 +13,17 @@ class SMiRL:
         # Tetris environment has observation space of..
         # field(200) / field_view
         # mino_pos / mino_rot / mino / hold / preview / status
-        # we only need field_view for minimizing surprise
+        # we only need field for minimizing surprise
 
-        self.buffer += s[200:400]
+        self.buffer += s[:200]
         self.size += 1
 
     def logprob(self, s):
-        s = s.copy()[200:400]
+        s = s.copy()[:200]
         theta = self.get_params()
         theta = np.clip(theta, 1e-5, 1 - 1e-5)
-        probs = s * theta + (1-s) * (1-theta)
-        return np.sum(np.log(probs))
+        log_probs = s * np.log(theta) + (1-s) * np.log(1-theta)
+        return np.sum(log_probs)
     
     def entropy(self):
         theta = self.get_params()

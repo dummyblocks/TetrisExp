@@ -45,7 +45,7 @@ class SinglePlayerTetris(gym.Env):
                 ),
                 "mino_rot": spaces.Box(0, 3, (1,), dtype=np.int64),
                 "mino": spaces.Discrete(7),
-                "hold": spaces.Discrete(8, start=-1),
+                "hold": spaces.Discrete(8, start=0),
                 "preview": spaces.MultiDiscrete([7] * self.preview_num),
                 "status": spaces.Box(
                     np.array([0, 0, 0, 0]), np.array([4, 100, 100, 1]), dtype=np.int64
@@ -53,7 +53,7 @@ class SinglePlayerTetris(gym.Env):
             }  # combo, b2b, ......
         )
 
-    def reset(self, seed, options):
+    def reset(self, seed=None):
         self.reward = 0
         self.game.system.init()
         state = self._get_obs_from_game()
@@ -71,12 +71,14 @@ class SinglePlayerTetris(gym.Env):
                 field_with_cur_mino[block.y, block.x] = 2
 
         mino_id = self.game.system._curr_mino_num
-        mino_pos = np.array([mino.center.x, mino.center.y])
-        mino_rot = mino.rotation_status % 4
+        mino_pos = np.array([mino.center.x, mino.center.y], dtype=np.int64)
+        mino_rot = np.array([mino.rotation_status % 4], dtype=np.int64)
 
         hold_id = self.game.system._hold_mino_num
         if hold_id == False:
-            hold_id = -1
+            hold_id = 0
+        else:
+            hold_id += 1
         preview_ids = np.array(
             (self.game.system._bag + self.game.system._next_bag)[: self.preview_num],
             dtype=np.int64,
@@ -103,12 +105,12 @@ class SinglePlayerTetris(gym.Env):
             "mino": mino_id,
             "hold": hold_id,
             "preview": preview_ids,
-            "status": [
+            "status": np.array([
                 lc,
                 ls,
                 il,
                 holdpossible,
-            ],  # line cleared, lines sent, current line queue, hold possible
+            ], dtype=np.int64),  # line cleared, lines sent, current line queue, hold possible
         }
 
         return state

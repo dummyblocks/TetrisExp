@@ -10,7 +10,7 @@ class MemoryBuffer:
     
     def push(self, *args):
         if self.use_intrinsic_reward:
-            self._push_int(args)
+            self._push_int(*args)
         else:
             self._push_ext(*args)
 
@@ -25,12 +25,17 @@ class MemoryBuffer:
     def sample(self):
         s = torch.Tensor(np.array([i[0] for i in self.buffer]))
         a = torch.Tensor(np.array([[i[1]] for i in self.buffer]))
-        r = torch.Tensor(np.array([[i[2]] for i in self.buffer]))
+        re = torch.Tensor(np.array([[i[2]] for i in self.buffer]))
+        if self.use_intrinsic_reward:
+            ri = torch.Tensor(np.array([[i[3]] for i in self.buffer]))
+            ns = torch.Tensor(np.array([i[4] for i in self.buffer]))
+            done = torch.Tensor(np.array([[i[5]] for i in self.buffer]))
+            return s, a, re, ri, ns, done
         ns = torch.Tensor(np.array([i[3] for i in self.buffer]))
         done = torch.Tensor(np.array([[i[4]] for i in self.buffer]))
         #goal = np.asarray([i[5] for i in batch])
 
-        return s, a, r, ns, done
+        return s, a, re, ns, done
 
     @property
     def size(self):
