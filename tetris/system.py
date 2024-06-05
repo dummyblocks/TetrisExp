@@ -289,6 +289,11 @@ class System:
             self._move_y()
         self._land_for_next_mino()
 
+    def fast_soft_drop(self): # big soft drop (don't land)
+        while self._is_enable_move_y():
+            self._move_y()
+        self._sdf_count = 0
+
     def try_move_right(self):
         #self.turn_on_auto_move_right()
         self._try_move_x(1)
