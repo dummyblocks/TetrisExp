@@ -79,8 +79,8 @@ class SinglePlayerTetris(gym.Env):
         return state, {}
 
     def _get_obs_from_game(self):
-        field = np.array(self.game.system.field[self.h :], dtype=bool) * 1
-        field_with_cur_mino = np.array(self.game.system.field[self.h :], dtype=bool) * 1
+        field = np.array(self.game.system.field[self.h :], dtype=bool) * 3
+        field_with_cur_mino = np.array(self.game.system.field[self.h :], dtype=bool) * 3
 
         mino = self.game.system.get_current_mino()
         
@@ -90,7 +90,7 @@ class SinglePlayerTetris(gym.Env):
         if self.draw_ghost:
             for block in self.game.system.get_ghost_mino().blocks:
                 if block.x >= 0 and block.y >= 0:
-                    field_with_cur_mino[block.y, block.x] = 3
+                    field_with_cur_mino[block.y, block.x] = 1
 
         mino_id = self.game.system._curr_mino_num
         mino_pos = np.array([mino.center.x, mino.center.y], dtype=np.int64)

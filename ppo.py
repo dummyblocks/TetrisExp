@@ -178,6 +178,7 @@ class PPO:
             self.memory.clear()
 
             result, state = self.step(envs, state)
+            writer.add_scalars('train', result)
 
             if t % save_freq == 0:
                 print(f'Episode {t} : {result}')
@@ -191,6 +192,8 @@ class PPO:
                 break
             
             t += 1
+
+        return writer
     
     def update_vanilla(self):
         s, a, r, ns, done = self.memory.sample()
