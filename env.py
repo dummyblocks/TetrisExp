@@ -43,7 +43,7 @@ class SinglePlayerTetris(gym.Env):
                 #"field": spaces.Box(0, 3, (self.h, self.w), dtype=np.int64),
                 #"field_view": spaces.Box(0, 3, (self.h, self.w), dtype=np.int64),
                 #"image": spaces.Box(0, 255, (1, self.h*2, self.h*2), dtype=np.uint8),
-                "image": spaces.Box(0.0, 1.0, (1, self.h*2, self.h*2), dtype=float),
+                "image": spaces.Box(0.0, 1.0, (1, self.h, self.h), dtype=float),
                 "mino_pos": spaces.Box(
                     np.array([0, 0]),
                     np.array([self.w - 1, 2 * self.h - 1]),
