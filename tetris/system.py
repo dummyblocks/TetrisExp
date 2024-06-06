@@ -153,12 +153,14 @@ class System:
         self.receive_queue_lines = 0
         self.incoming_garbage_next = 0
         self.outgoing_garbage = 0
+        self.max_mino_ops = 10
 
         self.init_next_mino()
 
     def init_next_mino(self):
         self._hold_used = False
         self._last_rot_point = 0
+        self._cur_mino_ops = 0
         self.curr_mino = self._get_next_mino()
         self._set_curr_mino_init_position()
 
@@ -181,7 +183,11 @@ class System:
         self._set_curr_mino_init_position()
 
     def frame_check(self, fps):
-        if fps > 1:
+        if fps >= 1:
+            self._cur_mino_ops+=1
+            if self._cur_mino_ops >= self.max_mino_ops*fps:
+                self.hard_drop()
+                self._cur_mino_ops = 0
             self.spend_second += 1 / (fps)
             self._check_y_gravity_time(fps)
             self._check_land_time(fps)
@@ -295,6 +301,8 @@ class System:
         while self._is_enable_move_y():
             self._move_y()
             self.last_line_down+=1
+        if self._timeout_enable_land:
+            self._land_for_next_mino()
         self._sdf_count = 0
 
     def try_move_right(self):
@@ -313,6 +321,8 @@ class System:
         if self._is_enable_move_y():
             self._move_y()
             self.last_line_down+=1
+        elif self._timeout_enable_land:
+            self._land_for_next_mino()
         self._sdf_count = 0
 
     def try_auto_drop(self): # auto soft drop
