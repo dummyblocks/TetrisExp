@@ -147,17 +147,20 @@ class System:
         self._garbage_delay = 0.5
         self.garbage_pos = random.randint(0, self.w - 1)
         self.garbage_pos_prob = 0.1
+        self.last_line_down = 0
 
         self.receive_queue = deque()
         self.receive_queue_lines = 0
         self.incoming_garbage_next = 0
         self.outgoing_garbage = 0
+        self.max_mino_ops = 10
 
         self.init_next_mino()
 
     def init_next_mino(self):
         self._hold_used = False
         self._last_rot_point = 0
+        self._cur_mino_ops = 0
         self.curr_mino = self._get_next_mino()
         self._set_curr_mino_init_position()
 
@@ -178,16 +181,21 @@ class System:
             self.curr_mino = self._get_mino(self._curr_mino_num)
         self._last_rot_point = 0
         self._set_curr_mino_init_position()
-
-    def frame_check(self, fps):
-        if fps > 1:
+    
+    def frame_check(self, fps, auto_drop=True):
+        if fps >= 1:
+            self._cur_mino_ops+=1
+            if self._cur_mino_ops >= self.max_mino_ops*fps:
+                self.hard_drop()
+                self._cur_mino_ops = 0
             self.spend_second += 1 / (fps)
-            self._check_y_gravity_time(fps)
-            self._check_land_time(fps)
-            self._check_r_das_timer(fps)
-            self._check_l_das_timer(fps)
-            self._check_r_arr_timer(fps)
-            self._check_l_arr_timer(fps)
+            if auto_drop:
+                self._check_y_gravity_time(fps)
+                self._check_land_time(fps)
+                self._check_r_das_timer(fps)
+                self._check_l_das_timer(fps)
+                self._check_r_arr_timer(fps)
+                self._check_l_arr_timer(fps)
             self._garbage_queue_update(fps)
 
     def is_game_over(self):
@@ -287,11 +295,15 @@ class System:
     def hard_drop(self):
         while self._is_enable_move_y():
             self._move_y()
+            self.last_line_down+=2
         self._land_for_next_mino()
 
     def fast_soft_drop(self): # big soft drop (don't land)
         while self._is_enable_move_y():
             self._move_y()
+            self.last_line_down+=1
+        if self._timeout_enable_land:
+            self._land_for_next_mino()
         self._sdf_count = 0
 
     def try_move_right(self):
@@ -309,11 +321,15 @@ class System:
     def try_soft_drop(self): # manual soft drop
         if self._is_enable_move_y():
             self._move_y()
+            self.last_line_down+=1
+        elif self._timeout_enable_land:
+            self._land_for_next_mino()
         self._sdf_count = 0
 
     def try_auto_drop(self): # auto soft drop
         if self._is_enable_move_y():
             self._move_y()
+            self.last_line_down+=1
         elif self._timeout_enable_land:
             self._land_for_next_mino()
         self._sdf_count = 0
@@ -586,6 +602,11 @@ class System:
         self._apply_garbage_lines(line_sent)
 
         self.init_next_mino()
+
+    def outgoing_linedown_send(self):
+        r = self.last_line_down
+        self.last_line_down=0
+        return r
 
     def outgoing_garbage_send(self):
         r = self.outgoing_garbage

@@ -4,6 +4,13 @@ from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.logger import configure
 from stable_baselines3.common.callbacks import CheckpointCallback
 from env import SinglePlayerTetris
+from stable_baselines3.common.logger import configure
+from stable_baselines3.common.callbacks import CheckpointCallback
+import tqdm
+seed = 42
+tmp_path = "./sb3_log/"
+# set up logger
+new_logger = configure(tmp_path, ["stdout", "csv", "tensorboard"])
 
 def env_wrap():
     return SinglePlayerTetris(fast_soft=True, draw_ghost=True)
