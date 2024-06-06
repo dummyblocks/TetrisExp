@@ -9,7 +9,7 @@ class SinglePlayerTetris(gym.Env):
 
     metadata = {"render_modes": ["human"], "render_fps": 60}
 
-    def __init__(self, render_mode=None, fps=3, fast_soft=True, draw_ghost=True) -> None:
+    def __init__(self, render_mode=None, fps=3, fast_soft=True, draw_ghost=True, auto_drop=False) -> None:
         super().__init__()
         self.w = 10
         self.h = 20
@@ -21,6 +21,7 @@ class SinglePlayerTetris(gym.Env):
         self.fps = fps  # three operation in 1 second
         self.fast_sd = fast_soft
         self.draw_ghost = draw_ghost
+        self.auto_drop = auto_drop
 
         self.game = tetris.Game(
             self.w,
@@ -33,8 +34,8 @@ class SinglePlayerTetris(gym.Env):
         assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
 
-        #self.action_space = spaces.Discrete(8)
-        self.action_space = spaces.Discrete(7)
+        self.action_space = spaces.Discrete(8)
+        #self.action_space = spaces.Discrete(7)
         # 0: left, 1: right, 2: hard, 3: soft, 4: CCW, 5: CW, 6: noop, 7: hold
 
         self.observation_space = spaces.Dict(
@@ -64,7 +65,7 @@ class SinglePlayerTetris(gym.Env):
                 self.game.system.try_soft_drop,
                 self.game.system.try_rotate_rcw,
                 self.game.system.try_rotate_cw,
-                #(lambda *_: None),
+                (lambda *_: None),
                 self.game.system.hold,
             ]
         if self.fast_sd:
@@ -142,7 +143,7 @@ class SinglePlayerTetris(gym.Env):
 
     def step(self, action):
 
-        self.game.system.frame_check(self.fps)
+        self.game.system.frame_check(self.fps,auto_drop=self.auto_drop)
         self.action_fp[action]()
 
         #line_send = self.game.system.outgoing_garbage_send()
@@ -355,7 +356,7 @@ if __name__ == "__main__":
 
     control = True
     fps = 60
-    env = SinglePlayerTetris(render_mode="human",fps=fps,fast_soft=True,draw_ghost=True)
+    env = SinglePlayerTetris(render_mode="human",fps=fps,fast_soft=False,draw_ghost=True,auto_drop=True)
     print(env.reset())
     while True:
 

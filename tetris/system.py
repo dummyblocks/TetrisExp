@@ -181,20 +181,21 @@ class System:
             self.curr_mino = self._get_mino(self._curr_mino_num)
         self._last_rot_point = 0
         self._set_curr_mino_init_position()
-
-    def frame_check(self, fps):
+    
+    def frame_check(self, fps, auto_drop=True):
         if fps >= 1:
             self._cur_mino_ops+=1
             if self._cur_mino_ops >= self.max_mino_ops*fps:
                 self.hard_drop()
                 self._cur_mino_ops = 0
             self.spend_second += 1 / (fps)
-            self._check_y_gravity_time(fps)
-            self._check_land_time(fps)
-            self._check_r_das_timer(fps)
-            self._check_l_das_timer(fps)
-            self._check_r_arr_timer(fps)
-            self._check_l_arr_timer(fps)
+            if auto_drop:
+                self._check_y_gravity_time(fps)
+                self._check_land_time(fps)
+                self._check_r_das_timer(fps)
+                self._check_l_das_timer(fps)
+                self._check_r_arr_timer(fps)
+                self._check_l_arr_timer(fps)
             self._garbage_queue_update(fps)
 
     def is_game_over(self):
