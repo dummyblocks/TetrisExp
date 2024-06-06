@@ -33,12 +33,12 @@ class SinglePlayerTetris(gym.Env):
         assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
 
-        self.action_space = spaces.Discrete(8)
-        # 0: left, 1: right, 2: hard, 3: soft, 4: CCW, 5: CW, 6: noop, 7: hold
+        self.action_space = spaces.Discrete(7)
+        # 0: left, 1: right, 2: hard, 3: soft, 4: CCW, 5: CW, #6: noop, 7: hold
 
         self.observation_space = spaces.Dict(
             {
-                "field": spaces.Box(0, 1, (self.h, self.w), dtype=np.int64),
+                "field": spaces.Box(0, 3, (self.h, self.w), dtype=np.int64),
                 "field_view": spaces.Box(0, 3, (self.h, self.w), dtype=np.int64),
                 "mino_pos": spaces.Box(
                     np.array([0, 0]),
@@ -62,7 +62,7 @@ class SinglePlayerTetris(gym.Env):
                 self.game.system.try_soft_drop,
                 self.game.system.try_rotate_rcw,
                 self.game.system.try_rotate_cw,
-                (lambda *_: None),
+                # (lambda *_: None),
                 self.game.system.hold,
             ]
         if self.fast_sd:
@@ -147,12 +147,16 @@ class SinglePlayerTetris(gym.Env):
         self.state = self._get_obs_from_game()
         self.reward = self.get_reward()
         terminated = self.game.system.is_game_over()
+        # if terminated:
+        #     self.reward -= 10
+        # if self.reward == 0:
+        #     self.reward = -0.01
         if self.render_mode == "human":
             self.render()
         return self.state, self.reward, terminated, False, {}
 
     def get_reward(self):
-        return self.last_line_cleared + self.last_lines_sent
+        return (self.last_line_cleared + self.last_lines_sent) ** 2
 
     def render(self):
         if self.render_mode is None:

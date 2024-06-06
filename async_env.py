@@ -1,5 +1,6 @@
 from multiprocessing import Process, Pipe
 import numpy as np
+from copy import deepcopy
 
 def worker(remote, parent_remote, env):
     parent_remote.close()
@@ -16,22 +17,21 @@ def worker(remote, parent_remote, env):
         elif cmd == 'close':
             remote.close()
             break
-        elif cmd == 'render':
-            env.render()
         else:
             raise NotImplementedError
 
-class Envs:
+class SubprocEnvs:
     '''
     A vector of multiple environments for asynchronous training
     '''
-    def __init__(self, envs, name, capacity):
-        self.nenvs = capacity
+    def __init__(self, envs, name):
+        self.nenvs = len(envs)
         self.env = envs[0]
         self.name = name
         self.waiting = False
         self.closed = False
-        self.remotes, self.work_remotes = zip(*[Pipe() for _ in range(capacity)])
+        self.recent = None
+        self.remotes, self.work_remotes = zip(*[Pipe() for _ in range(self.nenvs)])
         self.ps = [Process(target=worker, args=(work_remote, remote, env))
                    for (work_remote, remote, env) in zip(self.work_remotes, self.remotes, envs)]
         print('Start processes..')
@@ -57,6 +57,11 @@ class Envs:
         results = [remote.recv() for remote in self.remotes]
         self.waiting = False
         ns, r, done, trunc, info = zip(*results)
+        recent = deepcopy(ns)
+        for i, _done in enumerate(done):
+            if _done:
+                recent[i] = self.reset_idx(i)
+        self.recent = np.stack(recent)
         return np.stack(ns), np.stack(r), np.stack(done), np.stack(trunc), np.stack(info)
 
     def step(self, actions):
@@ -70,7 +75,12 @@ class Envs:
     
     def reset_idx(self, idx):
         self.remotes[idx].send(('reset', None))
-        return self.remotes[idx].recv()
+        return self.remotes[idx].recv()[0]
+    
+    def get_recent(self):
+        if self.recent is not None:
+            return self.recent
+        return self.reset()
 
     def close(self):
         if self.closed:
@@ -84,5 +94,56 @@ class Envs:
             process.join()
         self.closed = True
 
-    def render(self):
-        self.remotes[0].send(('render', None))
+class SerialEnvs:
+    '''
+    A vector of multiple environments for multi agent training
+    '''
+    def __init__(self, envs, name):
+        self.nenvs = len(envs)
+        self.env = envs[0]
+        self.recent = None
+        self.venv = envs
+        self.name = name
+        self.closed = False
+        print('Loaded envs.')
+
+    def action_space(self):
+        return self.env.action_space
+    
+    def observation_space(self):
+        return self.env.observation_space
+
+    def step(self, actions):
+        ns, r, done, trunc, info, recent = [], [], [], [], [], []
+        i = 0
+        for i, a in enumerate(actions):
+            _ns, _r, _done, _trunc, _info = self.venv[i].step(a)
+            ns.append(_ns)
+            r.append(_r)
+            done.append(_done)
+            trunc.append(_trunc)
+            info.append(_info)
+            recent.append(_ns if not _done else self.reset_idx(i))
+        
+        self.recent = np.stack(recent)
+        return np.stack(ns), np.stack(r), np.stack(done), np.stack(trunc), np.stack(info)
+        
+    def reset(self):
+        inits = []
+        for i in range(self.nenvs):
+            inits.append(self.venv[i].reset()[0])
+        self.recent = np.stack(inits)
+        return self.recent
+    
+    def reset_idx(self, idx):
+        return self.venv[idx].reset()[0]
+    
+    def get_recent(self):
+        if self.recent is not None:
+            return self.recent
+        return self.reset()
+
+    def close(self):
+        for i in range(self.nenvs):
+            self.venv[i].close()
+        self.closed = True

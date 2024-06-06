@@ -8,15 +8,21 @@ class ActorNN(nn.Module):
     '''
     A linear discrete policy network
     '''
-    def __init__(self, input_size, hidden_size, output_size, num_layers, activation):
+    def __init__(self, input_size, hidden_size, output_size, num_layers, activation, noisy):
         super(ActorNN, self).__init__()
+        linear = NoisyLinear if noisy else nn.Linear
         self.model = nn.Sequential(
-            nn.Linear(input_size, hidden_size),
+            nn.Linear(input_size, hidden_size // 2),
             activation,
-            *((nn.Linear(hidden_size, hidden_size),
-            activation) * (num_layers-2)),
-            nn.Linear(hidden_size, output_size)
+            nn.Linear(hidden_size // 2, hidden_size),
+            activation,
         )
+        for _ in range(num_layers - 3):
+            self.model.append(nn.Sequential(
+                linear(hidden_size, hidden_size),
+                activation,
+            ))
+        self.model.append(linear(hidden_size, output_size))
 
     def forward(self, s):
         if not isinstance(s, torch.Tensor):
@@ -59,11 +65,16 @@ class CriticNN(nn.Module):
             linear = nn.Linear
 
         self.feature = nn.Sequential(
-            nn.Linear(input_size, hidden_size),
+            nn.Linear(input_size, hidden_size // 2),
             activation,
-            *((nn.Linear(hidden_size, hidden_size),
-            activation) * (num_layers-2)),
+            nn.Linear(hidden_size // 2, hidden_size),
+            activation,
         )
+        for _ in range(num_layers - 3):
+            self.feature.append(nn.Sequential(
+                nn.Linear(hidden_size, hidden_size),
+                activation,
+            ))
         self.use_int = use_int
 
         self.critic_ext = linear(hidden_size, output_size)
@@ -73,7 +84,6 @@ class CriticNN(nn.Module):
                 linear(hidden_size, hidden_size),
                 activation
             )
-
             self.critic_int = linear(hidden_size, output_size)
 
     def forward(self, s):
@@ -96,7 +106,7 @@ class CriticNN(nn.Module):
 
 class NoisyLinear(nn.Module):
     '''
-    A simple noisy linear net for Rainbow DQN
+    A simple Gaussian noisy linear net
     '''
     def __init__(self, in_features, out_features, std_init=0.5):
         super(NoisyLinear, self).__init__()

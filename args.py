@@ -13,8 +13,10 @@ def get_args():
     parser.add_argument('--critic-lr', type=float, default=1e-4,
                         help='Critic learning rate (default: 1e-4)')
     parser.add_argument('--num-worker', type=int, default=8,
-                        help='Number of workers (CPU processes) to use (default: 8)')
-    parser.add_argument('--num-step', type=int, default=8192,
+                        help='Number of workers to use (default: 8)')
+    parser.add_argument('--subproc', action='store_true', default=False,
+                        help='Use multiprocessing for environments(default: False)')
+    parser.add_argument('--num-step', type=int, default=4096,
                         help='Number of forward steps (default: 4096)')
     parser.add_argument('--eps', type=float, default=0.2,
                         help='Epsilon (default: 0.2)')
@@ -28,14 +30,14 @@ def get_args():
                         help="Lambda coefficient in GAE formula (default: 0.95, 1 means no gae)")
     parser.add_argument('--no-cuda', action='store_true', default=True,
                         help='Use GPU training (default: False)')
-    parser.add_argument('--use-noisy-net', action='store_true', default=False,
+    parser.add_argument('--noisy', action='store_true', default=False,
                         help='Use NoisyNet (default: False)')
     # parser.add_argument('--no-sticky-action', action='store_true', default=False,
     #                     help='Use Sticky Action (default: True)')    
     # parser.add_argument("--sticky-action-prob", type=float, default=0.25,
     #                     help="Action probability (default: 0.25")
-    parser.add_argument('--epoch', type=int, default=10,
-                        help='number of epochs (default: 10)')
+    parser.add_argument('--epoch', type=int, default=4,
+                        help='number of epochs (default: 4)')
     parser.add_argument('--num-episode', type=int, default=1250,
                         help='number of episodes (default: 1250)')
     # parser.add_argument('--memory-size', type=int, default=10000,
@@ -47,15 +49,15 @@ def get_args():
     parser.add_argument('--entropy-coef', type=float, default=0.001,
                         help='entropy term coefficient (default: 0.001)')
     parser.add_argument('--ext-coef', type=float, default=2.,
-                        help='entropy term coefficient (default: 2.)')    
+                        help='extrinsic reward coefficient (default: 2.)')    
     parser.add_argument('--int-coef', type=float, default=1.,
-                        help='entropy term coefficient (default: 1.)')
+                        help='intrinsic reward coefficient (default: 1.)')
     # parser.add_argument('--max-episode-steps', type=int, default=4500,
     #                     help='Maximum steps per episode (default: 18000)')
     parser.add_argument('--pre-obs-norm-steps', type=int, default=10,
                         help='Number of steps for pre-normalization (default: 10)')
-    parser.add_argument('--save-interval', type=int, default=3,
-                        help='Save interval, one save per n updates (default: 3)')
+    parser.add_argument('--save-interval', type=int, default=5,
+                        help='Save interval, one save per n updates (default: 5)')
     parser.add_argument('--load-model', action='store_true', default=False,
                         help='Load pre-trained Model (default: False)')
     parser.add_argument('--log-dir', default=None,
@@ -65,8 +67,11 @@ def get_args():
     parser.add_argument('--recurrent-policy', action='store_true', default=False,
                         help='Use a recurrent policy')
     parser.add_argument('--render', action='store_true', default=False,
-                        help='Render training (default: False)')
-
+                        help='Render training (default : False)')
+    parser.add_argument('--hidden-size', type=int, default=256,
+                        help='Hidden features of neural net (default: 512)')
+    parser.add_argument('--num-layers', type=int, default=4,
+                        help='Number of layers of neural net (default: 4)')
     parser.add_argument('--env-name', default='SinglePlayerTetris',
                         help='Environment to train on (default: SinglePlayerTetris)')
 

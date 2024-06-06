@@ -15,11 +15,12 @@ class SMiRL:
         # mino_pos / mino_rot / mino / hold / preview / status
         # we only need field for minimizing surprise
 
-        self.buffer += s[:200]
+        self.buffer += s[:200] / 3.
         self.size += 1
 
     def logprob(self, s):
-        s = s.copy()[:200]
+        # look for field_view for comparison.
+        s = s.copy()[200:400] / 3.
         theta = self.get_params()
         theta = np.clip(theta, 1e-5, 1 - 1e-5)
         log_probs = s * np.log(theta) + (1-s) * np.log(1-theta)
