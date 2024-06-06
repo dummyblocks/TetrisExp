@@ -35,7 +35,7 @@ class SinglePlayerTetris(gym.Env):
         assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
 
-        self.action_space = spaces.Discrete(7 + 1 if enable_no_op else 0)
+        self.action_space = spaces.Discrete(7 + (1 if enable_no_op else 0))
         # 0: left, 1: right, 2: hard, 3: soft, 4: CCW, 5: CW, #6: noop, 7: hold
 
         self.observation_space = spaces.Dict(
