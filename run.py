@@ -6,7 +6,8 @@ import gymnasium as gym
 
 from ppo import PPO
 from async_env import *
-from model import ActorNN, CriticNN
+from model import TetrisActorCritic
+from rnd import TetrisRND
 
 from env import SinglePlayerTetris
 
@@ -24,12 +25,9 @@ if __name__ == "__main__":
         for i in range(args.num_worker):
             if i == 0 and args.render:
                 env = SinglePlayerTetris(render_mode='human')
-                env = gym.wrappers.FlattenObservation(env)
-                envs.append(env)
             else:
                 env = SinglePlayerTetris()
-                env = gym.wrappers.FlattenObservation(env)
-                envs.append(env)
+            envs.append(env)
     # else:
     #     env = gym.make(args.env_name)
     input_size = envs[0].observation_space.shape[0]
@@ -54,25 +52,15 @@ if __name__ == "__main__":
 
     print('Environment loading done..')
 
-    actor = ActorNN(
-        input_size, hidden_size, output_size, num_layers, nn.Tanh(), args.noisy
-    )
-    critic = CriticNN(
-        input_size, hidden_size, 1, num_layers, nn.Tanh(),
-        use_noisy=args.noisy, use_int='r' in args.algo
-    )
     agent = PPO(
-        actor=actor,
-        critic=critic,
-        actor_lr=args.actor_lr,
-        critic_lr=args.critic_lr,
+        model=TetrisActorCritic(),
+        lr=args.lr,
         epsilon=args.eps,
+        lamda=args.gae_lambda,
         episode_num=args.num_episode,
         episode_len=args.num_step,
         norm_len=args.pre_obs_norm_steps,
         batch_size=args.mini_batch,
-        #memory_size=args.memory_size,
-        lamda=args.gae_lambda,
         input_size=input_size,
         output_size=output_size,
         gamma_ext=args.ext_gamma,
@@ -84,7 +72,7 @@ if __name__ == "__main__":
         epochs=args.epoch,
         workers=args.num_worker,
         use_rnd='r' in args.algo,
-        rnd_arg=(input_size, hidden_size, output_size, num_layers, nn.ReLU()),
+        rnd=TetrisRND(),
         use_smirl='s' in args.algo,
         smirl_arg=smirl_size
     )

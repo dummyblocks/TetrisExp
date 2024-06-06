@@ -9,21 +9,19 @@ class SMiRL:
         self.dim = dim
         self.size = 1
 
-    def add(self, s):
+    def add(self, img):
         # Tetris environment has observation space of..
-        # field(200) / field_view
-        # mino_pos / mino_rot / mino / hold / preview / status
-        # we only need field for minimizing surprise
-
-        self.buffer += s[:200] / 3.
+        # img / mino_pos / mino_rot / mino / hold / preview / status
+        # we only need img for minimizing surprise
+        # Aware that img must be flattened.
+        self.buffer += img
         self.size += 1
 
-    def logprob(self, s):
+    def logprob(self, img):
         # look for field_view for comparison.
-        s = s.copy()[200:400] / 3.
         theta = self.get_params()
         theta = np.clip(theta, 1e-5, 1 - 1e-5)
-        log_probs = s * np.log(theta) + (1-s) * np.log(1-theta)
+        log_probs = img * np.log(theta) + (1-img) * np.log(1-theta)
         return np.sum(log_probs)
     
     def entropy(self):
@@ -39,8 +37,3 @@ class SMiRL:
     def reset(self):
         self.buffer = np.zeros(self.dim)
         self.size = 1
-
-    def save(self, save_dir, env_name):
-        import os
-        smirl_path = os.path.join(save_dir, env_name + '.smirl')
-        torch.save({'params':self.get_params()}, smirl_path)

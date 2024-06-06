@@ -11,6 +11,7 @@ from smirl import SMiRL
 from model import ActorNN, CriticNN
 from utils import *
 from tqdm import tqdm
+from copy import deepcopy
 import os
 
 update_proportion = 0.25
@@ -18,8 +19,9 @@ update_proportion = 0.25
 def add_smirl(s, smirl, t):
     aug_s_ = []
     for i, _s in enumerate(s):
-        smirl[i].add(_s)
-        aug_s = np.hstack([_s, smirl[i].get_params(), t])
+        smirl[i].add(_s['img'].flatten())
+        aug_s = deepcopy(_s)
+        aug_s['smirl'] = [smirl[i].get_params(), t]
         aug_s_.append(aug_s)
     return np.stack(aug_s_)
 
@@ -28,20 +30,19 @@ class PPO:
     '''
     Multi-agent PPO with some possible RND or SMiRL option
     '''
-    def __init__(self, actor: ActorNN, critic: CriticNN, actor_lr, critic_lr, epsilon,
-                 episode_num, episode_len, norm_len, batch_size, lamda, #memory_size, lamda,
+    def __init__(self, model, lr, epsilon, lamda,
+                 episode_num, episode_len,
+                 norm_len, batch_size,
                  input_size, output_size,
                  gamma_ext, gamma_int,
                  v_coef, ent_coef,
                  ext_coef, int_coef,
                  epochs, workers,
-                 use_rnd=False, rnd_arg=None, use_smirl=False, smirl_arg=None):
-        self.actor = actor
-        self.critic = critic
-        self.actor_optimizer = optim.Adam(self.actor.parameters(), actor_lr)
-        self.critic_optimizer = optim.Adam(self.critic.parameters(), critic_lr)
+                 use_rnd=False, rnd=None, use_smirl=False, smirl_arg=None):
+        self.model = model
+        self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
         self.clip_ratio = epsilon
-        #self.memory = MemoryBuffer()
+        self.lamda = lamda
         self.episode_num = episode_num
         self.episode_len = episode_len
         self.norm_len = norm_len
@@ -50,7 +51,6 @@ class PPO:
         self.input_size = input_size
         self.output_size = output_size
 
-        self.lamda = lamda
         self.gamma_ext = gamma_ext
         self.gamma_int = gamma_int
         self.v_coef = v_coef
@@ -63,12 +63,13 @@ class PPO:
         self.use_smirl = use_smirl
 
         if use_rnd:
-            self.rnd_network = RND(*rnd_arg)
-            self.rnd_optimizer = optim.Adam(self.rnd_network.predictor.parameters(), critic_lr)
-            #self.memory.set_use_int()
+            self.rnd = rnd
+            self.rnd_optimizer = optim.Adam(self.rnd.predictor.parameters(), lr=lr)
 
         if use_smirl:
             self.smirl_nn = [SMiRL(smirl_arg) for _ in range(workers)]
+            self.model.add_smirl()
+
     
     def collect_state_statistics(self, envs):
         print('Start normalization')
@@ -83,7 +84,7 @@ class PPO:
         self.ret = RewardForwardFilter(self.gamma_int)
         for _ in range(self.episode_len * self.norm_len):
             actions = np.random.randint(low=0, high=self.output_size, size=(envs.nenvs,))
-            ns, _, done, _, _ = envs.step(actions)
+            ns, _, _, _, _ = envs.step(actions)
             self.t += 1
             if self.use_smirl:
                 ns = add_smirl(ns, self.smirl_nn, self.t)
@@ -102,21 +103,19 @@ class PPO:
             s = envs.get_recent()
             if self.use_smirl:
                 s = add_smirl(s, self.smirl_nn, self.t)
-            a, _, _, result = self.actor(s)
-            ve, vi = self.critic(s)
+            a, ve, vi, _, _, result = self.model(s)
             ns, re, done, _, _ = envs.step(a)
 
             if self.use_smirl:
                 aug_ns_, smirl_r = [], []
                 for i, (_s, _ns) in enumerate(zip(s,ns)):
-                    ri_smirl = np.clip(self.smirl_nn[i].logprob(_ns) / 1000., -1., 1.)
+                    ri_smirl = np.clip(self.smirl_nn[i].logprob(_ns) / 1000., -5., 5.)
                     re[i] += ri_smirl
                     self.smirl_nn[i].add(_ns)
                     aug_ns = np.hstack([_ns, self.smirl_nn[i].get_params(), _s[-1]+1])
                     aug_ns_.append(aug_ns)
                     smirl_r.append(ri_smirl)
                 ns = np.stack(aug_ns_)
-                #self.memory.push(s, a, re, ns, done)
                 tot_smirl_r.append(np.stack(smirl_r))
 
             if self.use_rnd:
@@ -127,19 +126,14 @@ class PPO:
             tot_s.append(s)
             tot_re.append(re)
             tot_done.append(done)
-            tot_a.append(a.data.cpu().numpy().squeeze())
-            tot_ve.append(ve.data.cpu().numpy().squeeze())
-            if self.use_rnd:
-                tot_vi.append(vi.data.cpu().numpy().squeeze())
-            tot_prob.append(result.detach().cpu())
-
-            # if not self.use_rnd and not self.use_smirl:
-                #self.memory.push(s, a, re, ns, done)
+            tot_a.append(a)
+            tot_ve.append(ve)
+            tot_vi.append(vi)
+            tot_prob.append(result)
         
-        ve, vi = self.critic(s)
-        tot_ve.append(ve.data.cpu().numpy().squeeze())
-        if self.use_rnd:
-            tot_vi.append(vi.data.cpu().numpy().squeeze())
+        _, ve, vi, _, _, _ = self.model(s)
+        tot_ve.append(ve)
+        tot_vi.append(vi)
 
         tot_s = np.stack(tot_s).transpose([1,0,2]).reshape([-1, self.input_size])
         tot_ns = np.stack(tot_ns).transpose([1,0,2]).reshape([-1, self.input_size])
@@ -148,9 +142,9 @@ class PPO:
         
         tot_re = np.stack(tot_re).transpose()
         tot_ve = np.stack(tot_ve).transpose()
+        tot_vi = np.stack(tot_vi).transpose()
         if self.use_rnd:
             tot_ri = np.stack(tot_ri).transpose()
-            tot_vi = np.stack(tot_vi).transpose()
 
         tot_prob = np.stack(tot_prob).transpose([1,0,2]).reshape([-1, self.output_size])
 
@@ -193,16 +187,22 @@ class PPO:
             result['max_smirl_r'] = np.max(tot_smirl_r)
             result['min_smirl_r'] = np.min(tot_smirl_r)
             result['avg_smirl_r'] = np.mean(tot_smirl_r)
-        result['episode_avg_len'] = envs.nenvs * self.episode_len / np.sum(tot_done)
+        mean_len = envs.nenvs * self.episode_len / (np.sum(tot_done) + envs.nenvs)
+        if self.episode_len - mean_len < 10:
+            envs.reset()
+        result['episode_avg_len'] = mean_len
         return result
 
     def train(self, envs, save_dir, save_freq, writer):
+        self.model.train()
+        if self.use_rnd:
+            self.rnd_network.train()
+
         self.t = 0
         if self.use_rnd:
             self.collect_state_statistics(envs)
             self.t -= self.norm_len * self.episode_len
         while True:
-            # self.memory.clear()
             if self.use_smirl:
                 for smirl in self.smirl_nn:
                     smirl.reset()
@@ -214,15 +214,14 @@ class PPO:
                 print(f'Episode {self.t+1} : {result}')
                 self.save(save_dir, envs.name)
                 if self.use_rnd:
-                    self.rnd_network.save(save_dir, envs.name)
-                if self.use_smirl:
-                    for smirl in self.smirl_nn:
-                        smirl.save(save_dir, envs.name)
+                    self.rnd.save(save_dir, envs.name)
 
             if self.t > self.episode_num:
                 break
             
             self.t += 1
+
+        self.model.eval()
 
         return writer
     
@@ -232,8 +231,7 @@ class PPO:
         for epoch in tqdm(range(self.epochs), desc=f'Update {self.t+1}',mininterval=0.5):
             actor_losses, critic_losses, entropy_bonuses = [], [], []
             for _s, _a, _ret, _adv, _log_prob in loader:
-                value, _ = self.critic(_s)
-                action, log_prob, entropy, dist = self.actor(_s)
+                action, value, _, log_prob, entropy, dist = self.model(_s)
                 log_prob = Categorical(dist).log_prob(_a)
                 ratio = (log_prob - _log_prob).exp()
                 surr1 = _adv * ratio
@@ -243,14 +241,10 @@ class PPO:
                 critic_loss = F.mse_loss(value, _ret)
                 entropy_bonus = -entropy.mean()
 
-                self.actor_optimizer.zero_grad()
-                self.critic_optimizer.zero_grad()
-
+                self.optimizer.zero_grad()
                 loss = actor_loss + self.v_coef * critic_loss + self.ent_coef * entropy_bonus
                 loss.backward()
-
-                self.critic_optimizer.step()
-                self.actor_optimizer.step()
+                self.optimizer.step()
 
                 actor_losses.append(actor_loss.item())
                 critic_losses.append(critic_loss.item())
@@ -280,30 +274,26 @@ class PPO:
                 mask = (mask < update_proportion).type(torch.FloatTensor)
                 forward_loss = (forward_loss * mask).sum() / torch.max(mask.sum(), torch.Tensor([1]))
 
-                value_ext, value_int = self.critic(_s)
-                critic_ext_loss = F.mse_loss(value_ext, _ret_ext)
-                critic_int_loss = F.mse_loss(value_int, _ret_int)
+                action, value_ext, value_int, log_prob, entropy, dist = self.model(_s)
 
-                action, log_prob, entropy, dist = self.actor(_s)
                 log_prob = Categorical(dist).log_prob(_a)
                 ratio = (log_prob - _log_prob).exp()
                 surr1 = _adv * ratio
                 surr2 = _adv * torch.clamp(ratio, 1.0-self.clip_ratio, 1.0+self.clip_ratio)
+                
+                critic_ext_loss = F.mse_loss(value_ext, _ret_ext)
+                critic_int_loss = F.mse_loss(value_int, _ret_int)
 
                 actor_loss = -torch.min(surr1, surr2).mean()
                 critic_loss = critic_ext_loss + critic_int_loss
                 entropy_bonus = -entropy.mean()
 
-                self.actor_optimizer.zero_grad()
-                self.critic_optimizer.zero_grad()
+                self.optimizer.zero_grad()
                 self.rnd_optimizer.zero_grad()
-
                 loss = actor_loss + self.v_coef * critic_loss + self.ent_coef * entropy_bonus + forward_loss
                 loss.backward()
-
                 self.rnd_optimizer.step()
-                self.critic_optimizer.step()
-                self.actor_optimizer.step()
+                self.optimizer.step()
 
                 actor_losses.append(actor_loss.item())
                 critic_losses.append(critic_loss.item())
@@ -328,18 +318,13 @@ class PPO:
         return result
 
     def load(self, save_dir, env_name, use_cuda):
-        actor_path = os.path.join(save_dir, env_name + '.modela')
-        critic_path = os.path.join(save_dir, env_name + '.modela')
+        model_path = os.path.join(save_dir, env_name + '.model')
         if use_cuda:
-            self.actor.load_state_dict(torch.load(actor_path))
-            self.critic.load_state_dict(torch.load(critic_path))
+            self.model.load_state_dict(torch.load(model_path))
         else:
-            self.actor.load_state_dict(torch.load(actor_path, map_location='cpu'))
-            self.critic.load_state_dict(torch.load(critic_path, map_location='cpu'))
+            self.model.load_state_dict(torch.load(model_path, map_location='cpu'))
 
     def save(self, save_dir, env_name):
-        actor_path = os.path.join(save_dir, env_name + '.modela')
-        critic_path = os.path.join(save_dir, env_name + '.modelc')
-        torch.save(self.actor.state_dict(), actor_path)
-        torch.save(self.critic.state_dict(), critic_path)
+        model_path = os.path.join(save_dir, env_name + '.model')
+        torch.save(self.model.state_dict(), model_path)
 

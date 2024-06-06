@@ -20,6 +20,17 @@ def eval_ret_adv(reward, done, value, gamma, num_step, lamda, num_worker):
         adv = ret - value[:, :-1]
 
     return ret.reshape([-1]), adv.reshape([-1])
+
+def parse_dict(self, state_dicts):
+    img = np.stack([state['img'] for state in state_dicts])
+    mino_pos = np.stack([state['mino_pos'] for state in state_dicts])
+    mino_rot = np.stack([np.eye(4)[state['mino_rot']] for state in state_dicts])
+    mino = np.stack([np.eye(7)[state['mino']] for state in state_dicts])
+    hold = np.stack([np.eye(7)[state['hold']] for state in state_dicts])
+    preview = np.stack([np.eye(7)[state['preview']] for state in state_dicts])
+    status = np.stack([state['status'] for state in state_dicts])
+    
+    return img, mino_pos, mino_rot, mino, hold, preview, status
     
 
 class RunningMeanStd:
