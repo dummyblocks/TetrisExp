@@ -9,7 +9,7 @@ class SinglePlayerTetris(gym.Env):
 
     metadata = {"render_modes": ["human"], "render_fps": 60}
 
-    def __init__(self, render_mode=None, fps=3, fast_soft=False, draw_ghost=True, auto_drop=False, draw_hold_next=True) -> None:
+    def __init__(self, render_mode=None, fps=3, fast_soft=False, draw_ghost=True, auto_drop=False, draw_hold_next=True, enable_no_op=False) -> None:
         super().__init__()
         self.w = 10
         self.h = 20
@@ -35,7 +35,7 @@ class SinglePlayerTetris(gym.Env):
         assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
 
-        self.action_space = spaces.Discrete(7)
+        self.action_space = spaces.Discrete(7 + 1 if enable_no_op else 0)
         # 0: left, 1: right, 2: hard, 3: soft, 4: CCW, 5: CW, #6: noop, 7: hold
 
         self.observation_space = spaces.Dict(
@@ -66,9 +66,11 @@ class SinglePlayerTetris(gym.Env):
                 self.game.system.try_soft_drop,
                 self.game.system.try_rotate_rcw,
                 self.game.system.try_rotate_cw,
-                # (lambda *_: None),
                 self.game.system.hold,
             ]
+        if enable_no_op:
+            self.action_fp = self.action_fp[0:6] + [(lambda *_: None)] + self.action_fp[7:]
+
         if self.fast_sd:
             self.action_fp[3]=self.game.system.fast_soft_drop
 
