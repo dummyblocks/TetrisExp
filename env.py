@@ -9,7 +9,7 @@ class SinglePlayerTetris(gym.Env):
 
     metadata = {"render_modes": ["human"], "render_fps": 60}
 
-    def __init__(self, render_mode=None, fps=3, fast_soft=True, draw_ghost=True, auto_drop=False) -> None:
+    def __init__(self, render_mode=None, fps=3, fast_soft=False, draw_ghost=True, auto_drop=False, draw_hold_next=True) -> None:
         super().__init__()
         self.w = 10
         self.h = 20
@@ -22,6 +22,7 @@ class SinglePlayerTetris(gym.Env):
         self.fast_sd = fast_soft
         self.draw_ghost = draw_ghost
         self.auto_drop = auto_drop
+        self.draw_hold_next = draw_hold_next
 
         self.game = tetris.Game(
             self.w,
@@ -39,8 +40,10 @@ class SinglePlayerTetris(gym.Env):
 
         self.observation_space = spaces.Dict(
             {
-                "field": spaces.Box(0, 3, (self.h, self.w), dtype=np.int64),
-                "field_view": spaces.Box(0, 3, (self.h, self.w), dtype=np.int64),
+                #"field": spaces.Box(0, 3, (self.h, self.w), dtype=np.int64),
+                #"field_view": spaces.Box(0, 3, (self.h, self.w), dtype=np.int64),
+                #"image": spaces.Box(0, 255, (1, self.h*4, self.w*4), dtype=np.uint8),
+                "image": spaces.Box(0, 255, (1, self.h*4, self.h*4), dtype=np.uint8),
                 "mino_pos": spaces.Box(
                     np.array([0, 0]),
                     np.array([self.w - 1, 2 * self.h - 1]),
@@ -81,17 +84,32 @@ class SinglePlayerTetris(gym.Env):
 
     def _get_obs_from_game(self):
         field = np.array(self.game.system.field[self.h :], dtype=bool) * 3
-        field_with_cur_mino = np.array(self.game.system.field[self.h :], dtype=bool) * 3
+        field_with_cur_mino = np.array(self.game.system.field[self.h :], dtype=bool) * 255 # 3
 
         mino = self.game.system.get_current_mino()
         
         for block in mino.blocks:
             if block.x >= 0 and block.y >= 0:
-                field_with_cur_mino[block.y, block.x] = 2
+                field_with_cur_mino[block.y, block.x] = 180 #2
         if self.draw_ghost:
             for block in self.game.system.get_ghost_mino().blocks:
                 if block.x >= 0 and block.y >= 0:
-                    field_with_cur_mino[block.y, block.x] = 1
+                    field_with_cur_mino[block.y, block.x] = 110 # 1
+        
+        if self.draw_hold_next:
+            left_disp = np.zeros((20, 5),dtype=np.uint8)
+            holdblock = self.game.system.get_hold_mino()
+            if holdblock:
+                for block in holdblock.blocks:
+                    if block.x >= 0 and block.y >= 0:
+                        left_disp[block.y, block.x] = 255 # 1
+
+            right_disp = np.zeros((20, 5),dtype=np.uint8)
+            for idx, mn in enumerate(self.game.system.get_preview_mino_list()):
+                for block in mn.blocks:
+                    if block.x >= 0 and block.y >= 0:
+                        right_disp[idx*4+block.y, block.x] = 255 # 1
+            field_with_cur_mino = np.concatenate((left_disp, field_with_cur_mino, right_disp),axis=1)
 
         mino_id = self.game.system._curr_mino_num
         mino_pos = np.array([mino.center.x, mino.center.y], dtype=np.int64)
@@ -149,16 +167,17 @@ class SinglePlayerTetris(gym.Env):
         self.state = self._get_obs_from_game()
         self.reward = self.get_reward()
         terminated = self.game.system.is_game_over()
-        # if terminated:
-        #     self.reward -= 10
-        # if self.reward == 0:
-        #     self.reward = -0.01
+        if terminated:
+            self.reward -= 10
+        #if self.reward == 0:
+        #    self.reward = -0.01
         if self.render_mode == "human":
             self.render()
         return self.state, self.reward, terminated, False, {}
 
     def get_reward(self):
-        return (self.last_line_cleared + self.last_lines_sent) ** 2
+        return 4 * (self.last_line_cleared + self.last_lines_sent) ** 1.5 + self.game.system.outgoing_linedown_send()*0.1
+        return (self.last_line_cleared + self.last_lines_sent) ** 2 #+ self.game.system.outgoing_linedown_send()*0.25
 
     def render(self):
         if self.render_mode is None:
