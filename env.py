@@ -3,7 +3,7 @@ from gymnasium import spaces
 import numpy as np
 import tetris
 import pygame as pg
-import time 
+import time
 
 class SinglePlayerTetris(gym.Env):
 
@@ -141,9 +141,9 @@ class SinglePlayerTetris(gym.Env):
         holdpossible = 0 if self.game.system._hold_used else 1
 
         state = {
-            "field": field,
-            "field_view": field_with_cur_mino,
-            # "image": np.kron(field_with_cur_mino.reshape((1, *field_with_cur_mino.shape)).astype(np.uint8),np.ones((4,4),np.uint8)),
+            #"field": field,
+            #"field_view": field_with_cur_mino,
+            "image": np.kron(field_with_cur_mino.reshape((1, *field_with_cur_mino.shape)).astype(np.uint8),np.ones((4,4),np.uint8)),
             "mino_pos": mino_pos,
             "mino_rot": mino_rot,
             "mino": mino_id,
@@ -169,16 +169,17 @@ class SinglePlayerTetris(gym.Env):
         self.state = self._get_obs_from_game()
         self.reward = self.get_reward()
         terminated = self.game.system.is_game_over()
-        # if terminated:
-        #     self.reward -= 10
-        # if self.reward == 0:
-        #     self.reward = -0.01
+        if terminated:
+            self.reward -= 10
+        #if self.reward == 0:
+        #    self.reward = -0.01
         if self.render_mode == "human":
             self.render()
         return self.state, self.reward, terminated, False, {}
 
     def get_reward(self):
-        return (self.last_line_cleared + self.last_lines_sent) ** 2
+        return 4 * (self.last_line_cleared + self.last_lines_sent) ** 1.5 + self.game.system.outgoing_linedown_send()*0.1
+        return (self.last_line_cleared + self.last_lines_sent) ** 2 #+ self.game.system.outgoing_linedown_send()*0.25
 
     def render(self):
         if self.render_mode is None:
@@ -306,8 +307,8 @@ class SinglePlayerTetris(gym.Env):
                 ),
                 (self.screen_margin, self.screen_margin * 16),
             )
-            # if self.reward > 0:
-                # print('rew:',self.reward)
+            if self.reward > 0:
+                print('rew:',self.reward)
             self.background_screen.fill(pg.Color("gray20"))
             self.hold_screen.fill(pg.Color("BLACK"))
             self.play_screen.fill(pg.Color("BLACK"))
