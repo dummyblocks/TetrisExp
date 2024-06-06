@@ -3,7 +3,7 @@ from gymnasium import spaces
 import numpy as np
 import tetris
 import pygame as pg
-import time
+import time 
 
 class SinglePlayerTetris(gym.Env):
 
@@ -147,8 +147,8 @@ class SinglePlayerTetris(gym.Env):
         self.state = self._get_obs_from_game()
         self.reward = self.get_reward()
         terminated = self.game.system.is_game_over()
-        # if terminated:
-        #     self.reward -= 10
+        if terminated:
+            self.reward -= 2
         # if self.reward == 0:
         #     self.reward = -0.01
         if self.render_mode == "human":
@@ -156,7 +156,7 @@ class SinglePlayerTetris(gym.Env):
         return self.state, self.reward, terminated, False, {}
 
     def get_reward(self):
-        return (self.last_line_cleared + self.last_lines_sent) ** 2
+        return 1 + (self.last_line_cleared + self.last_lines_sent) ** 2
 
     def render(self):
         if self.render_mode is None:
@@ -284,8 +284,8 @@ class SinglePlayerTetris(gym.Env):
                 ),
                 (self.screen_margin, self.screen_margin * 16),
             )
-            if self.reward > 0:
-                print('rew:',self.reward)
+            # if self.reward > 0:
+                # print('rew:',self.reward)
             self.background_screen.fill(pg.Color("gray20"))
             self.hold_screen.fill(pg.Color("BLACK"))
             self.play_screen.fill(pg.Color("BLACK"))
