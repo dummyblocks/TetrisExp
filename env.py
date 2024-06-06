@@ -9,7 +9,7 @@ class SinglePlayerTetris(gym.Env):
 
     metadata = {"render_modes": ["human"], "render_fps": 60}
 
-    def __init__(self, render_mode=None, fps=3, fast_soft=True, draw_ghost=True, auto_drop=False) -> None:
+    def __init__(self, render_mode=None, fps=3, fast_soft=False, draw_ghost=True, auto_drop=False) -> None:
         super().__init__()
         self.w = 10
         self.h = 20
@@ -121,9 +121,9 @@ class SinglePlayerTetris(gym.Env):
         holdpossible = 0 if self.game.system._hold_used else 1
 
         state = {
-            #"field": field,
-            #"field_view": field_with_cur_mino,
-            "image": np.kron(field_with_cur_mino.reshape((1, *field_with_cur_mino.shape)).astype(np.uint8),np.ones((4,4),np.uint8)),
+            "field": field,
+            "field_view": field_with_cur_mino,
+            # "image": np.kron(field_with_cur_mino.reshape((1, *field_with_cur_mino.shape)).astype(np.uint8),np.ones((4,4),np.uint8)),
             "mino_pos": mino_pos,
             "mino_rot": mino_rot,
             "mino": mino_id,
@@ -150,15 +150,16 @@ class SinglePlayerTetris(gym.Env):
         self.reward = self.get_reward()
         terminated = self.game.system.is_game_over()
         if terminated:
-            self.reward -= 2
-        # if self.reward == 0:
-        #     self.reward = -0.01
+            self.reward -= 10
+        if self.reward == 0:
+            self.reward = -0.01
         if self.render_mode == "human":
             self.render()
         return self.state, self.reward, terminated, False, {}
 
     def get_reward(self):
-        return 1 + (self.last_line_cleared + self.last_lines_sent) ** 2
+        return 0.25*self.game.system.outgoing_linedown_send() + \
+            (self.last_line_cleared + self.last_lines_sent) ** 2
 
     def render(self):
         if self.render_mode is None:
