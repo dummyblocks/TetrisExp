@@ -141,7 +141,7 @@ class SinglePlayerTetris(gym.Env):
         state = {
             #"field": field,
             #"field_view": field_with_cur_mino,
-            "image": np.kron(field_with_cur_mino.reshape((1, *field_with_cur_mino.shape)).astype(float),np.ones((2,2),float)),
+            "image": field_with_cur_mino.reshape((1, *field_with_cur_mino.shape)).astype(float),
             #"image": (255*np.kron(field_with_cur_mino.reshape((1, *field_with_cur_mino.shape)).astype(float),np.ones((2,2),float))).astype(np.uint8),
             "mino_pos": mino_pos,
             "mino_rot": mino_rot,
