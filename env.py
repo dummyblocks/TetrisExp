@@ -9,7 +9,7 @@ class SinglePlayerTetris(gym.Env):
 
     metadata = {"render_modes": ["human"], "render_fps": 60}
 
-    def __init__(self, render_mode=None, fps=3, fast_soft=False, draw_ghost=False) -> None:
+    def __init__(self, render_mode=None, fps=3, fast_soft=True, draw_ghost=True, auto_drop=False) -> None:
         super().__init__()
         self.w = 10
         self.h = 20
@@ -21,6 +21,7 @@ class SinglePlayerTetris(gym.Env):
         self.fps = fps  # three operation in 1 second
         self.fast_sd = fast_soft
         self.draw_ghost = draw_ghost
+        self.auto_drop = auto_drop
 
         self.game = tetris.Game(
             self.w,
@@ -120,8 +121,9 @@ class SinglePlayerTetris(gym.Env):
         holdpossible = 0 if self.game.system._hold_used else 1
 
         state = {
-            "field": field,
-            "field_view": field_with_cur_mino,
+            #"field": field,
+            #"field_view": field_with_cur_mino,
+            "image": np.kron(field_with_cur_mino.reshape((1, *field_with_cur_mino.shape)).astype(np.uint8),np.ones((4,4),np.uint8)),
             "mino_pos": mino_pos,
             "mino_rot": mino_rot,
             "mino": mino_id,
@@ -139,7 +141,7 @@ class SinglePlayerTetris(gym.Env):
 
     def step(self, action):
 
-        self.game.system.frame_check(self.fps)
+        self.game.system.frame_check(self.fps,auto_drop=self.auto_drop)
         self.action_fp[action]()
 
         #line_send = self.game.system.outgoing_garbage_send()
@@ -352,7 +354,7 @@ if __name__ == "__main__":
 
     control = True
     fps = 60
-    env = SinglePlayerTetris(render_mode="human",fps=fps,fast_soft=True,draw_ghost=True)
+    env = SinglePlayerTetris(render_mode="human",fps=fps,fast_soft=False,draw_ghost=True,auto_drop=True)
     print(env.reset())
     while True:
 
