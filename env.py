@@ -42,8 +42,8 @@ class SinglePlayerTetris(gym.Env):
             {
                 #"field": spaces.Box(0, 3, (self.h, self.w), dtype=np.int64),
                 #"field_view": spaces.Box(0, 3, (self.h, self.w), dtype=np.int64),
-                #"image": spaces.Box(0, 255, (1, self.h*4, self.w*4), dtype=np.uint8),
-                "image": spaces.Box(0, 255, (1, self.h*4, self.h*4), dtype=np.uint8),
+                #"image": spaces.Box(0, 255, (1, self.h*2, self.h*2), dtype=np.uint8),
+                "image": spaces.Box(0.0, 1.0, (1, self.h, self.h), dtype=float),
                 "mino_pos": spaces.Box(
                     np.array([0, 0]),
                     np.array([self.w - 1, 2 * self.h - 1]),
@@ -69,7 +69,7 @@ class SinglePlayerTetris(gym.Env):
                 self.game.system.hold,
             ]
         if enable_no_op:
-            self.action_fp = self.action_fp[0:6] + [(lambda *_: None)] + self.action_fp[7:]
+            self.action_fp = self.action_fp[0:6] + [(lambda *_: None)] + self.action_fp[6:]
 
         if self.fast_sd:
             self.action_fp[3]=self.game.system.fast_soft_drop
@@ -86,31 +86,29 @@ class SinglePlayerTetris(gym.Env):
 
     def _get_obs_from_game(self):
         field = np.array(self.game.system.field[self.h :], dtype=bool) * 3
-        field_with_cur_mino = np.array(self.game.system.field[self.h :], dtype=bool) * 255 # 3
+        field_with_cur_mino = np.array(self.game.system.field[self.h :], dtype=bool) * 1.0 # 3
 
         mino = self.game.system.get_current_mino()
         
         for block in mino.blocks:
             if block.x >= 0 and block.y >= 0:
-                field_with_cur_mino[block.y, block.x] = 180 #2
+                field_with_cur_mino[block.y, block.x] = 0.7 #2
         if self.draw_ghost:
             for block in self.game.system.get_ghost_mino().blocks:
                 if block.x >= 0 and block.y >= 0:
-                    field_with_cur_mino[block.y, block.x] = 110 # 1
+                    field_with_cur_mino[block.y, block.x] = 0.3 # 1
         
         if self.draw_hold_next:
-            left_disp = np.zeros((20, 5),dtype=np.uint8)
+            left_disp = np.zeros((20, 5),dtype=float)
             holdblock = self.game.system.get_hold_mino()
             if holdblock:
                 for block in holdblock.blocks:
-                    if block.x >= 0 and block.y >= 0:
-                        left_disp[block.y, block.x] = 255 # 1
+                    left_disp[1+block.y, 1+block.x] = 1.0 # 1
 
-            right_disp = np.zeros((20, 5),dtype=np.uint8)
+            right_disp = np.zeros((20, 5),dtype=float)
             for idx, mn in enumerate(self.game.system.get_preview_mino_list()):
                 for block in mn.blocks:
-                    if block.x >= 0 and block.y >= 0:
-                        right_disp[idx*4+block.y, block.x] = 255 # 1
+                    right_disp[1+idx*4+block.y, 2+block.x] = 1.0 # 1
             field_with_cur_mino = np.concatenate((left_disp, field_with_cur_mino, right_disp),axis=1)
 
         mino_id = self.game.system._curr_mino_num
@@ -143,7 +141,8 @@ class SinglePlayerTetris(gym.Env):
         state = {
             #"field": field,
             #"field_view": field_with_cur_mino,
-            "image": np.kron(field_with_cur_mino.reshape((1, *field_with_cur_mino.shape)).astype(np.uint8),np.ones((4,4),np.uint8)),
+            "image": field_with_cur_mino.reshape((1, *field_with_cur_mino.shape)).astype(float),
+            #"image": (255*np.kron(field_with_cur_mino.reshape((1, *field_with_cur_mino.shape)).astype(float),np.ones((2,2),float))).astype(np.uint8),
             "mino_pos": mino_pos,
             "mino_rot": mino_rot,
             "mino": mino_id,
@@ -375,7 +374,7 @@ if __name__ == "__main__":
 
     control = True
     fps = 60
-    env = SinglePlayerTetris(render_mode="human",fps=fps,fast_soft=False,draw_ghost=True,auto_drop=True)
+    env = SinglePlayerTetris(render_mode="human",fps=fps,fast_soft=False,draw_ghost=True,auto_drop=True, draw_hold_next=True,enable_no_op=True)
     print(env.reset())
     while True:
 
@@ -387,7 +386,7 @@ if __name__ == "__main__":
         # 0: left, 1: right, 2: hard, 3: soft, 4: CCW, 5: CW, 6: noop, 7: hold
 
         state, reward, term, trunc, info = env.step(action)
-        # print(state["field_view"])
+        #print(state['image'].astype(np.bool_)*1)
         if term:
             env.reset()
         time.sleep(1./fps)
