@@ -4,13 +4,14 @@ import torch.nn.functional as F
 from torch.distributions import Categorical
 import numpy as np
 from utils import parse_dict
+import random
 
 class ActorNN(nn.Module):
     '''
     A linear discrete policy network
     '''
     def __init__(self, input_size, hidden_size, output_size, num_layers, activation, noisy):
-        super(ActorNN, self).__init__()
+        super().__init__()
         linear = NoisyLinear if noisy else nn.Linear
         self.model = nn.Sequential(
             nn.Linear(input_size, hidden_size // 2),
@@ -58,7 +59,7 @@ class CriticNN(nn.Module):
     A linear discrete value network
     '''
     def __init__(self, input_size, hidden_size, output_size, num_layers, activation, use_noisy=False, use_int=False):
-        super(CriticNN, self).__init__()
+        super().__init__()
 
         if use_noisy:
             linear = NoisyLinear
@@ -157,8 +158,11 @@ class TetrisActorCritic(nn.Module):
     '''
     Actor-Critic Network only designed for TetrisEnv. ~950K params.
     '''
-    def __init__(self, input_size, output_size, noisy=False):
+    def __init__(self, input_size, output_size, use_smirl=False, noisy=False):
         super().__init__()
+        
+        self.input_size = input_size
+        self.output_size = output_size
 
         linear = NoisyLinear if noisy else nn.Linear
 
@@ -176,16 +180,17 @@ class TetrisActorCritic(nn.Module):
             nn.ReLU(),
         )
 
-        self.mino_feature = linear(8 + 4, 32)
+        self.encode = linear(256 + 2, 32)
+        self.mino_feature = linear(7 + 4, 32)
         self.hold_feature = linear(8, 32)
-        self.preview_feature = linear(8, 32)
+        self.preview_feature = linear(35, 32)
         self.mhp_feature = linear(32 + 32 + 32, 256)
-        self.imhp_feature = linear(256 + 256, 512 + 4)
+        self.imhps_feature = linear(256 + 256 + 4, 512)
 
         self.actor = nn.Sequential(
-            linear(512 + 4, 512),
+            linear(512, 512),
             nn.ReLU(),
-            linear(512, 7)
+            linear(512, output_size)
         )
 
         self.extra_layer = nn.Sequential(
@@ -196,19 +201,35 @@ class TetrisActorCritic(nn.Module):
         self.critic_ext = linear(512, 1)
         self.critic_int = linear(512, 1)
 
+        self.use_smirl = use_smirl
+        if use_smirl:
+            self.smirl_feature = nn.Sequential(
+                linear(401, 256),
+                nn.ReLU(),
+                linear(256, 512),
+            )
+            for i in range(len(self.smirl_feature)):
+                if type(self.smirl_feature[i]) == nn.Linear:
+                    nn.init.orthogonal_(self.smirl_feature[i].weight, 0.1)
+                    self.smirl_feature[i].bias.data.zero_()
+
         for m in self.modules():
             if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
                 nn.init.orthogonal_(m.weight, np.sqrt(2))
                 m.bias.data.zero_()
 
+        nn.init.orthogonal_(self.encode.weight, 0.1)
+        self.encode.bias.data.zero_()
         nn.init.orthogonal_(self.mino_feature.weight, 0.1)
-        self.critic.bias.data.zero_()
+        self.mino_feature.bias.data.zero_()
         nn.init.orthogonal_(self.hold_feature.weight, 0.1)
-        self.critic.bias.data.zero_()
+        self.hold_feature.bias.data.zero_()
         nn.init.orthogonal_(self.preview_feature.weight, 0.1)
-        self.critic.bias.data.zero_()
-        nn.init.orthogonal_(self.imhp_feature.weight, 0.01)
-        self.critic.bias.data.zero_()
+        self.preview_feature.bias.data.zero_()
+        nn.init.orthogonal_(self.mhp_feature.weight, 0.01)
+        self.mhp_feature.bias.data.zero_()
+        nn.init.orthogonal_(self.imhps_feature.weight, 0.01)
+        self.imhps_feature.bias.data.zero_()
 
         nn.init.orthogonal_(self.critic_ext.weight, 0.01)
         self.critic_ext.bias.data.zero_()
@@ -224,37 +245,52 @@ class TetrisActorCritic(nn.Module):
             if type(self.extra_layer[i]) == nn.Linear:
                 nn.init.orthogonal_(self.extra_layer[i].weight, 0.1)
                 self.extra_layer[i].bias.data.zero_()
-        
-        for i in range(len(self.mhp_feature)):
-            if type(self.mhp_feature[i]) == nn.Linear:
-                nn.init.orthogonal_(self.mhp_feature[i].weight, 0.01)
-                self.mhp_feature[i].bias.data.zero_()
 
-    def encode(self, coord, dim):
+    def best_state(self, states):
+        max_value = None
+        best_state = None
 
-        return 
+        if random.random() <= self.epsilon:
+            return random.choice(list(states))
+        else:
+            for state in states:
+                value = self.predict_value(np.reshape(state, [1, self.input_size]))
+                if not max_value or value > max_value:
+                    max_value = value
+                    best_state = state
+
+        return best_state
 
     def forward(self, s):
-        img, mino_pos, mino_rot, mino, hold, preview, status = parse_dict(s)
+        img, mino_pos, mino_rot, mino, hold, preview, status, smirl = parse_dict(s, self.use_smirl)
 
         img_feature = self.img_feature(img)
-        mino_feature = F.relu(self.mino_feature(torch.cat((mino, mino_rot)))) + self.encode(mino_pos, 32)
+        mino_feature = F.relu(self.mino_feature(torch.cat((mino, mino_rot),dim=1)) + \
+                              self.encode(torch.cat((img_feature, mino_pos),dim=1)))
         hold_feature = F.relu(self.hold_feature(hold))
-        preview_feature = F.relu(self.preview_feature(nn.Flatten()(preview)))
-        mhp_feature = F.relu(self.mhp_feature(torch.cat((mino_feature, hold_feature, preview_feature))))
-        imhp_feature = F.relu(self.imhp_feature(torch.cat((img_feature, mhp_feature))))
+        preview_feature = F.relu(self.preview_feature(preview))
+        
+        mhp_feature = F.relu(self.mhp_feature(
+                        torch.cat((mino_feature, hold_feature, preview_feature),dim=1)
+                        ))
+        if self.use_smirl:
+            imhps_feature = F.relu(self.imhps_feature(
+                        torch.cat((img_feature, mhp_feature, status),dim=1)
+                        ) + self.smirl_feature(smirl))
+        else:
+            imhps_feature = F.relu(self.imhps_feature(
+                        torch.cat((img_feature, mhp_feature, status),dim=1)
+                        ))
 
-        result = F.softmax(self.actor(torch.cat(imhp_feature, status)))
+        result = F.softmax(self.actor(imhps_feature),dim=1)
         action_dist = Categorical(result)
         action = action_dist.sample()
         log_prob = action_dist.log_prob(action).unsqueeze(1)
         entropy = action_dist.entropy().unsqueeze(1)
 
-        value_feed = self.extra_layer(imhp_feature)+imhp_feature
+        value_feed = self.extra_layer(imhps_feature) + imhps_feature
         value_ext = self.critic_ext(value_feed)
         value_int = self.critic_int(value_feed)
 
-        return action.data.cpu().numpy().squeeze(), \
-               value_ext.data.cpu().numpy().squeeze(), \
-               value_int.data.cpu().numpy().squeeze(), \
-               log_prob.detach(), entropy.detach(), result.detach().cpu()
+        return action.detach(), value_ext, value_int, \
+               log_prob.detach(), entropy.detach(), result

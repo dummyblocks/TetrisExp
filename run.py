@@ -27,6 +27,7 @@ if __name__ == "__main__":
                 env = SinglePlayerTetris(render_mode='human')
             else:
                 env = SinglePlayerTetris()
+            env = gym.wrappers.FlattenObservation(env)
             envs.append(env)
     # else:
     #     env = gym.make(args.env_name)
@@ -35,7 +36,7 @@ if __name__ == "__main__":
     num_layers = args.num_layers
     output_size = envs[0].action_space.n
 
-    smirl_size = envs[0].get_wrapper_attr('w') * envs[0].get_wrapper_attr('h')
+    smirl_size = 400
     
     if 's' in args.algo:
         # add smirl state in input
@@ -53,7 +54,7 @@ if __name__ == "__main__":
     print('Environment loading done..')
 
     agent = PPO(
-        model=TetrisActorCritic(),
+        model=TetrisActorCritic(input_size, output_size, use_smirl='s' in args.algo, noisy=args.noisy),
         lr=args.lr,
         epsilon=args.eps,
         lamda=args.gae_lambda,
@@ -72,7 +73,7 @@ if __name__ == "__main__":
         epochs=args.epoch,
         workers=args.num_worker,
         use_rnd='r' in args.algo,
-        rnd=TetrisRND(),
+        rnd=TetrisRND(use_smirl='s' in args.algo),
         use_smirl='s' in args.algo,
         smirl_arg=smirl_size
     )

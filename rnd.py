@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn import init
 import numpy as np
 from utils import parse_dict
@@ -9,7 +10,7 @@ class RND(nn.Module):
     Linear Networks for RND
     '''
     def __init__(self, input_size, hidden_size, output_size, num_layers, activation):
-        super(RND, self).__init__()
+        super().__init__()
 
         self.input_size = input_size
         self.output_size = output_size
@@ -66,19 +67,11 @@ class RND(nn.Module):
         torch.save(self.target.state_dict(), target_path)
 
 
-class TetrisPredictor(nn.Module):
-    '''
-    Predict network for TetrisEnv
-    '''
-    def __init__(self):
-        super().__init__()
-
-
 class TetrisRandom(nn.Module):
     '''
     Random network for TetrisEnv
     '''
-    def __init__(self, input_size, output_size, noisy=False):
+    def __init__(self, use_smirl=False):
         super().__init__()
 
         # state : image(1, 20, 20) / mino_pos(2,) / mino_rot(1,) / mino(one-hot) / hold(one-hot) / preview(one-hot * 5) / status(4,)
@@ -95,96 +88,106 @@ class TetrisRandom(nn.Module):
             nn.ReLU(),
         )
 
-        self.mino_feature = nn.Linear(8 + 4, 32)
+        self.encode = nn.Linear(256 + 2, 32)
+        self.mino_feature = nn.Linear(7 + 4, 32)
         self.hold_feature = nn.Linear(8, 32)
-        self.preview_feature = nn.Linear(8, 32)
+        self.preview_feature = nn.Linear(35, 32)
         self.mhp_feature = nn.Linear(32 + 32 + 32, 256)
-        self.imhp_feature = nn.Linear(256 + 256, 512 + 4)
+        self.imhps_feature = nn.Linear(256 + 256 + 4, 512)
 
-        self.actor = nn.Sequential(
-            nn.Linear(512 + 4, 512),
-            nn.ReLU(),
-            nn.Linear(512, 7)
-        )
-
-        self.extra_layer = nn.Sequential(
+        self.critic = nn.Sequential(
             nn.Linear(512, 512),
             nn.ReLU(),
+            nn.Linear(512, 512)
         )
 
-        self.critic_ext = nn.Linear(512, 1)
-        self.critic_int = nn.Linear(512, 1)
+        self.use_smirl = use_smirl
+        if use_smirl:
+            self.smirl_feature = nn.Sequential(
+                nn.Linear(401, 256),
+                nn.ReLU(),
+                nn.Linear(256, 512),
+            )
+            for i in range(len(self.smirl_feature)):
+                if type(self.smirl_feature[i]) == nn.Linear:
+                    nn.init.orthogonal_(self.smirl_feature[i].weight, 0.1)
+                    self.smirl_feature[i].bias.data.zero_()
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
                 nn.init.orthogonal_(m.weight, np.sqrt(2))
                 m.bias.data.zero_()
 
+        nn.init.orthogonal_(self.encode.weight, 0.1)
+        self.encode.bias.data.zero_()
         nn.init.orthogonal_(self.mino_feature.weight, 0.1)
-        self.critic.bias.data.zero_()
+        self.mino_feature.bias.data.zero_()
         nn.init.orthogonal_(self.hold_feature.weight, 0.1)
-        self.critic.bias.data.zero_()
+        self.hold_feature.bias.data.zero_()
         nn.init.orthogonal_(self.preview_feature.weight, 0.1)
-        self.critic.bias.data.zero_()
-        nn.init.orthogonal_(self.imhp_feature.weight, 0.01)
-        self.critic.bias.data.zero_()
-
-        nn.init.orthogonal_(self.critic_ext.weight, 0.01)
-        self.critic_ext.bias.data.zero_()
-        nn.init.orthogonal_(self.critic_int.weight, 0.01)
-        self.critic_int.bias.data.zero_()
-
-        for i in range(len(self.actor)):
-            if type(self.actor[i]) == nn.Linear:
-                nn.init.orthogonal_(self.actor[i].weight, 0.01)
-                self.actor[i].bias.data.zero_()
-
-        for i in range(len(self.extra_layer)):
-            if type(self.extra_layer[i]) == nn.Linear:
-                nn.init.orthogonal_(self.extra_layer[i].weight, 0.1)
-                self.extra_layer[i].bias.data.zero_()
-        
-        for i in range(len(self.mhp_feature)):
-            if type(self.mhp_feature[i]) == nn.Linear:
-                nn.init.orthogonal_(self.mhp_feature[i].weight, 0.01)
-                self.mhp_feature[i].bias.data.zero_()
-
-    def encode(self, coord, dim):
-
-        return 
+        self.preview_feature.bias.data.zero_()
+        nn.init.orthogonal_(self.mhp_feature.weight, 0.01)
+        self.mhp_feature.bias.data.zero_()
+        nn.init.orthogonal_(self.imhps_feature.weight, 0.01)
+        self.imhps_feature.bias.data.zero_()
 
     def forward(self, s):
-        img, mino_pos, mino_rot, mino, hold, preview, status = parse_dict(s)
+        img, mino_pos, mino_rot, mino, hold, preview, status, smirl = parse_dict(s, self.use_smirl)
 
         img_feature = self.img_feature(img)
-        mino_feature = F.relu(self.mino_feature(torch.cat((mino, mino_rot)))) + self.encode(mino_pos, 32)
+        mino_feature = F.relu(self.mino_feature(torch.cat((mino, mino_rot),dim=1)) + \
+                              self.encode(torch.cat((img_feature, mino_pos),dim=1)))
         hold_feature = F.relu(self.hold_feature(hold))
         preview_feature = F.relu(self.preview_feature(nn.Flatten()(preview)))
-        mhp_feature = F.relu(self.mhp_feature(torch.cat((mino_feature, hold_feature, preview_feature))))
-        imhp_feature = F.relu(self.imhp_feature(torch.cat((img_feature, mhp_feature))))
 
-        result = F.softmax(self.actor(torch.cat(imhp_feature, status)))
-        action_dist = Categorical(result)
-        action = action_dist.sample()
-        log_prob = action_dist.log_prob(action).unsqueeze(1)
-        entropy = action_dist.entropy().unsqueeze(1)
+        mhp_feature = F.relu(self.mhp_feature(torch.cat((mino_feature, hold_feature, preview_feature),dim=1)))
+        if self.use_smirl:
+            imhps_feature = F.relu(self.imhps_feature(
+                        torch.cat((img_feature, mhp_feature, status),dim=1)
+                        ) + self.smirl_feature(smirl))
+        else:
+            imhps_feature = F.relu(self.imhps_feature(
+                        torch.cat((img_feature, mhp_feature, status),dim=1)
+                        ))
 
-        value_feed = self.extra_layer(imhp_feature)+imhp_feature
-        value_ext = self.critic_ext(value_feed)
-        value_int = self.critic_int(value_feed)
+        value = self.critic(imhps_feature)
+
+        return value
+    
+
+class TetrisPredictor(TetrisRandom):
+    '''
+    Predictor network for TetrisEnv
+    '''
+    def __init__(self, use_smirl=False):
+        super().__init__(use_smirl=use_smirl)
+
+        self.critic = nn.Sequential(
+            nn.Linear(512, 512),
+            nn.ReLU(),
+            nn.Linear(512, 512)
+        )
+
+        for i in range(len(self.critic)):
+            if type(self.critic[i]) == nn.Linear:
+                nn.init.orthogonal_(self.critic[i].weight, 0.01)
+                self.critic[i].bias.data.zero_()
+
+    def forward(self, s):
+        value = self.critic(super().forward(s))
 
         return value
 
 
 class TetrisRND(nn.Module):
     '''
-    Random Network for TetrisEnv
+    Random Network Distillation for TetrisEnv
     '''
-    def __init__(self):
-        super(RND, self).__init__()
+    def __init__(self, use_smirl=False):
+        super().__init__()
 
-        self.predictor = TetrisPredictor()
-        self.target = TetrisRandom()
+        self.predictor = TetrisPredictor(use_smirl)
+        self.target = TetrisRandom(use_smirl)
 
         for m in self.modules():
             if isinstance(m, nn.Linear):

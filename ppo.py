@@ -16,15 +16,13 @@ import os
 
 update_proportion = 0.25
 
-def add_smirl(s, smirl, t):
+def add_smirl(s, smirl):
     aug_s_ = []
     for i, _s in enumerate(s):
-        smirl[i].add(_s['img'].flatten())
-        aug_s = deepcopy(_s)
-        aug_s['smirl'] = [smirl[i].get_params(), t]
+        smirl[i].add(_s[8:408])
+        aug_s = np.hstack([_s, smirl[i].get_params(), smirl[i].size - 1])
         aug_s_.append(aug_s)
     return np.stack(aug_s_)
-
 
 class PPO:
     '''
@@ -68,8 +66,6 @@ class PPO:
 
         if use_smirl:
             self.smirl_nn = [SMiRL(smirl_arg) for _ in range(workers)]
-            self.model.add_smirl()
-
     
     def collect_state_statistics(self, envs):
         print('Start normalization')
@@ -79,15 +75,18 @@ class PPO:
         self.reward_rms = RunningMeanStd()
         init = envs.get_recent()
         if self.use_smirl:
-            init = add_smirl(init, self.smirl_nn, self.t)
+            init = add_smirl(init, self.smirl_nn)
         all_obs.append(init)
         self.ret = RewardForwardFilter(self.gamma_int)
         for _ in range(self.episode_len * self.norm_len):
             actions = np.random.randint(low=0, high=self.output_size, size=(envs.nenvs,))
-            ns, _, _, _, _ = envs.step(actions)
+            ns, _, done, _, _ = envs.step(actions)
             self.t += 1
             if self.use_smirl:
-                ns = add_smirl(ns, self.smirl_nn, self.t)
+                ns = add_smirl(ns, self.smirl_nn)
+                for i, _done in enumerate(done):
+                    if _done:
+                        self.smirl_nn[i].reset()
             all_obs.append(ns)
             if len(all_obs) % (self.episode_len * envs.nenvs) == 0:
                 obs_ = np.asarray(all_obs).astype(np.float32).reshape((-1, self.input_size))
@@ -102,38 +101,35 @@ class PPO:
         for _ in range(self.episode_len):
             s = envs.get_recent()
             if self.use_smirl:
-                s = add_smirl(s, self.smirl_nn, self.t)
+                s = add_smirl(s, self.smirl_nn)
             a, ve, vi, _, _, result = self.model(s)
             ns, re, done, _, _ = envs.step(a)
 
             if self.use_smirl:
-                aug_ns_, smirl_r = [], []
-                for i, (_s, _ns) in enumerate(zip(s,ns)):
-                    ri_smirl = np.clip(self.smirl_nn[i].logprob(_ns) / 1000., -5., 5.)
-                    re[i] += ri_smirl
-                    self.smirl_nn[i].add(_ns)
-                    aug_ns = np.hstack([_ns, self.smirl_nn[i].get_params(), _s[-1]+1])
-                    aug_ns_.append(aug_ns)
-                    smirl_r.append(ri_smirl)
-                ns = np.stack(aug_ns_)
-                tot_smirl_r.append(np.stack(smirl_r))
+                smirl_r = np.array([np.clip(smirl.logprob(ns[:,8:408]) / 1000., -5., 5.) for smirl in self.smirl_nn])
+                re += smirl_r
+                ns = add_smirl(ns, self.smirl_nn)
+                tot_smirl_r.append(smirl_r)
+                for i, _done in enumerate(done):
+                    if _done:
+                        self.smirl_nn[i].reset()
 
             if self.use_rnd:
-                ri_rnd = self.rnd_network.eval_int(((ns - self.obs_rms.mean) / np.sqrt(self.obs_rms.var)).clip(-5, 5))
+                ri_rnd = self.rnd.eval_int((ns - self.obs_rms.mean / np.sqrt(self.obs_rms.var)))
                 tot_ri.append(ri_rnd.data.cpu().numpy())
 
             tot_ns.append(ns)
             tot_s.append(s)
             tot_re.append(re)
             tot_done.append(done)
-            tot_a.append(a)
-            tot_ve.append(ve)
-            tot_vi.append(vi)
-            tot_prob.append(result)
+            tot_a.append(a.data.cpu().numpy().squeeze())
+            tot_ve.append(ve.data.cpu().numpy().squeeze())
+            tot_vi.append(vi.data.cpu().numpy().squeeze())
+            tot_prob.append(result.detach().cpu())
         
         _, ve, vi, _, _, _ = self.model(s)
-        tot_ve.append(ve)
-        tot_vi.append(vi)
+        tot_ve.append(ve.data.cpu().numpy().squeeze())
+        tot_vi.append(vi.data.cpu().numpy().squeeze())
 
         tot_s = np.stack(tot_s).transpose([1,0,2]).reshape([-1, self.input_size])
         tot_ns = np.stack(tot_ns).transpose([1,0,2]).reshape([-1, self.input_size])
@@ -157,7 +153,7 @@ class PPO:
 
             self.obs_rms.update(tot_ns)
 
-            ns = ((tot_ns - self.obs_rms.mean) / np.sqrt(self.obs_rms.var)).clip(-5, 5)
+            ns = (ns - self.obs_rms.mean / np.sqrt(self.obs_rms.var))
             ret_ext, adv_ext = eval_ret_adv(tot_re, tot_done, tot_ve, self.gamma_ext,
                                             self.episode_len, self.lamda, envs.nenvs)
             ret_int, adv_int = eval_ret_adv(tot_ri, np.zeros_like(tot_ri), tot_vi, self.gamma_int,
@@ -167,7 +163,7 @@ class PPO:
             ret_int = torch.Tensor(ret_int).unsqueeze(-1)
             s = torch.Tensor(tot_s)
             a = torch.Tensor(tot_a)
-            ns = torch.Tensor(ns)
+            ns = torch.Tensor(tot_ns)
             logprob = Categorical(torch.FloatTensor(tot_prob)).log_prob(a).unsqueeze(-1)
             a = a.unsqueeze(-1)
 
@@ -196,17 +192,13 @@ class PPO:
     def train(self, envs, save_dir, save_freq, writer):
         self.model.train()
         if self.use_rnd:
-            self.rnd_network.train()
+            self.rnd.train()
 
         self.t = 0
         if self.use_rnd:
             self.collect_state_statistics(envs)
             self.t -= self.norm_len * self.episode_len
         while True:
-            if self.use_smirl:
-                for smirl in self.smirl_nn:
-                    smirl.reset()
-
             result = self.step(envs)
             writer.add_scalars('train', result)
 
@@ -222,10 +214,13 @@ class PPO:
             self.t += 1
 
         self.model.eval()
+        if self.use_rnd:
+            self.rnd.eval()
 
         return writer
     
     def update_vanilla(self, s, a, ret, adv, logprob):
+        torch.autograd.set_detect_anomaly(True)
         dataset = TensorDataset(s, a, ret, adv, logprob)
         loader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
         for epoch in tqdm(range(self.epochs), desc=f'Update {self.t+1}',mininterval=0.5):
@@ -263,12 +258,14 @@ class PPO:
         return result
 
     def update(self, s, a, ret_ext, ret_int, ns, adv, logprob):
+        torch.autograd.set_detect_anomaly(True)
+        # print(s.shape, a.shape, ret_ext.shape, ret_int.shape, ns.shape, adv.shape, logprob.shape)
         dataset = TensorDataset(s, a, ret_ext, ret_int, ns, adv, logprob)
         loader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
         for epoch in tqdm(range(self.epochs),desc=f'Update {self.t+1}',mininterval=0.5):
             actor_losses, critic_losses, entropy_bonuses = [], [], []
             for _s, _a, _ret_ext, _ret_int, _ns, _adv, _log_prob in loader:
-                predict_ns_feature, target_ns_feature = self.rnd_network(_ns)
+                predict_ns_feature, target_ns_feature = self.rnd(_ns)
                 forward_loss = nn.MSELoss(reduction='none')(predict_ns_feature, target_ns_feature.detach()).mean(-1)
                 mask = torch.rand(len(forward_loss))
                 mask = (mask < update_proportion).type(torch.FloatTensor)
