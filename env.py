@@ -42,8 +42,8 @@ class SinglePlayerTetris(gym.Env):
             {
                 #"field": spaces.Box(0, 3, (self.h, self.w), dtype=np.int64),
                 #"field_view": spaces.Box(0, 3, (self.h, self.w), dtype=np.int64),
-                #"image": spaces.Box(0, 255, (1, self.h*2, self.h*2), dtype=np.uint8),
-                "image": spaces.Box(0.0, 1.0, (1, self.h, self.h), dtype=float),
+                "image": spaces.Box(0, 255, (1, self.h*2, self.h*2), dtype=np.uint8),
+                #"image": spaces.Box(0.0, 1.0, (1, self.h, self.h), dtype=float),
                 "mino_pos": spaces.Box(
                     np.array([0, 0]),
                     np.array([self.w - 1, 2 * self.h - 1]),
@@ -141,8 +141,8 @@ class SinglePlayerTetris(gym.Env):
         state = {
             #"field": field,
             #"field_view": field_with_cur_mino,
-            "image": field_with_cur_mino.reshape((1, *field_with_cur_mino.shape)).astype(float),
-            #"image": (255*np.kron(field_with_cur_mino.reshape((1, *field_with_cur_mino.shape)).astype(float),np.ones((2,2),float))).astype(np.uint8),
+            #"image": field_with_cur_mino.reshape((1, *field_with_cur_mino.shape)).astype(float),
+            "image": np.kron((255*field_with_cur_mino.reshape((1, *field_with_cur_mino.shape))).astype(np.uint8),np.ones((2,2),np.uint8)),
             "mino_pos": mino_pos,
             "mino_rot": mino_rot,
             "mino": mino_id,
@@ -170,6 +170,8 @@ class SinglePlayerTetris(gym.Env):
         terminated = self.game.system.is_game_over()
         if terminated:
             self.reward -= 10
+        if 4==action or action==5:
+            self.reward += 0.1
         #if self.reward == 0:
         #    self.reward = -0.01
         if self.render_mode == "human":
@@ -177,7 +179,7 @@ class SinglePlayerTetris(gym.Env):
         return self.state, self.reward, terminated, False, {}
 
     def get_reward(self):
-        return 4 * (self.last_line_cleared + self.last_lines_sent) ** 1.5 + self.game.system.outgoing_linedown_send()*0.1
+        return 4 * (self.last_line_cleared + self.last_lines_sent) ** 1.5 + self.game.system.outgoing_linedown_send()*0.25
         return (self.last_line_cleared + self.last_lines_sent) ** 2 #+ self.game.system.outgoing_linedown_send()*0.25
 
     def render(self):

@@ -13,20 +13,20 @@ tmp_path = "./sb3_log/"
 new_logger = configure(tmp_path, ["stdout", "csv", "tensorboard"])
 
 def env_wrap():
-    return SinglePlayerTetris(fast_soft=True, draw_ghost=True)
+    return SinglePlayerTetris(fast_soft=False, draw_ghost=True, auto_drop=False, fps=1, draw_hold_next=True, enable_no_op=False)
 
 tmp_path = "./sb3_log/"
 new_logger = configure(tmp_path, ["stdout", "csv", "tensorboard"])
 
 tetris_env = make_vec_env(env_wrap, n_envs=8)
-check_env(SinglePlayerTetris(fast_soft=True, draw_ghost=True))
-model = PPO('MultiInputPolicy', tetris_env, verbose=1)
+check_env(SinglePlayerTetris(fast_soft=False, draw_ghost=True, auto_drop=False, fps=1, draw_hold_next=True, enable_no_op=False))
+model = PPO('MultiInputPolicy', tetris_env, verbose=1, ent_coef=0.01)
 model.set_logger(new_logger)
 
 checkpoint = CheckpointCallback(
-    save_freq=1e6,
+    save_freq=1e5//8,
     save_path=tmp_path,
-    name_prefix="tetris_sb3_ppo_mlp_",
+    name_prefix="tetris_sb3_ppo_image",
     save_replay_buffer=True,
     save_vecnormalize=True,
 )
