@@ -60,6 +60,8 @@ class PPO:
         self.use_rnd = use_rnd
         self.use_smirl = use_smirl
 
+        self.workers = workers
+
         if use_rnd:
             self.rnd = rnd
             self.rnd_optimizer = optim.Adam(self.rnd.predictor.parameters(), lr=lr)
@@ -200,7 +202,7 @@ class PPO:
             self.t -= self.norm_len * self.episode_len
         while True:
             result = self.step(envs)
-            writer.add_scalars('train', result)
+            writer.add_scalars('train', result, global_step=self.workers * self.episode_len)
 
             if (self.t+1) % save_freq == 0:
                 print(f'Episode {self.t+1} : {result}')
