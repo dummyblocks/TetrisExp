@@ -49,7 +49,7 @@ class SinglePlayerTetris(gym.Env):
                     np.array([self.w - 1, 2 * self.h - 1]),
                     dtype=np.int64,
                 ),
-                "mino_rot": spaces.Box(0, 3, (1,), dtype=np.int64),
+                "mino_rot": spaces.Discrete(4),
                 "mino": spaces.Discrete(7),
                 "hold": spaces.Discrete(8, start=0),
                 "preview": spaces.MultiDiscrete([7] * self.preview_num),
@@ -113,7 +113,7 @@ class SinglePlayerTetris(gym.Env):
 
         mino_id = self.game.system._curr_mino_num
         mino_pos = np.array([mino.center.x, mino.center.y], dtype=np.int64)
-        mino_rot = np.array([mino.rotation_status % 4], dtype=np.int64)
+        mino_rot = mino.rotation_status % 4
 
         hold_id = self.game.system._hold_mino_num
         if hold_id == False:

@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 
 use_gae = True
 
@@ -20,6 +21,32 @@ def eval_ret_adv(reward, done, value, gamma, num_step, lamda, num_worker):
         adv = ret - value[:, :-1]
 
     return ret.reshape([-1]), adv.reshape([-1])
+
+def parse_dict(state_dicts, use_smirl):
+    result = []
+    if type(state_dicts) == list and type(state_dicts[0]) == dict:
+        img = np.stack([state['image'] for state in state_dicts])
+        mino_pos = np.stack([state['mino_pos'] for state in state_dicts])
+        mino_rot = np.stack([np.eye(4)[state['mino_rot']] for state in state_dicts])
+        mino = np.stack([np.eye(7)[state['mino']] for state in state_dicts])
+        hold = np.stack([np.eye(7)[state['hold']] for state in state_dicts])
+        preview = np.stack([np.eye(7)[state['preview']].flatten() for state in state_dicts])
+        status = np.stack([state['status'] for state in state_dicts])
+        result.extend([img, mino_pos, mino_rot, mino, hold, preview, status])
+        result.append(np.stack([state['smirl'] for state in state_dicts]) if use_smirl else None)
+    else:
+        # state_dicts is in shape of (~, 400 + 2 + 1 + 7 + 7 + 35 + 4)
+        hold = torch.Tensor(state_dicts[:, :8])
+        img = torch.Tensor(state_dicts[:, 8:408].reshape([-1, 1, 20, 20]))
+        mino = torch.Tensor(state_dicts[:, 408:415])
+        mino_pos = torch.Tensor(state_dicts[:, 415:417])
+        mino_rot = torch.Tensor(state_dicts[:, 417:421])
+        preview = torch.Tensor(state_dicts[:, 421:456])
+        status = torch.Tensor(state_dicts[:, 456:460])
+        result.extend([img, mino_pos, mino_rot, mino, hold, preview, status])
+        result.append(torch.Tensor(state_dicts[:, 460:961]) if use_smirl else None)
+    
+    return tuple(result)
     
 
 class RunningMeanStd:

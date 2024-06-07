@@ -57,7 +57,7 @@ class SubprocEnvs:
         results = [remote.recv() for remote in self.remotes]
         self.waiting = False
         ns, r, done, trunc, info = zip(*results)
-        recent = deepcopy(ns)
+        recent = list(ns)
         for i, _done in enumerate(done):
             if _done:
                 recent[i] = self.reset_idx(i)
@@ -75,7 +75,7 @@ class SubprocEnvs:
     
     def reset_idx(self, idx):
         self.remotes[idx].send(('reset', None))
-        return self.remotes[idx].recv()[0]
+        return self.remotes[idx].recv()
     
     def get_recent(self):
         if self.recent is not None:
