@@ -161,9 +161,9 @@ class TetrisPredictor(TetrisRandom):
         super().__init__(use_smirl=use_smirl)
 
         self.critic = nn.Sequential(
-            nn.Linear(512, 512),
+            nn.Linear(256, 256),
             nn.ReLU(),
-            nn.Linear(512, 512)
+            nn.Linear(256, 256)
         )
 
         for i in range(len(self.critic)):
