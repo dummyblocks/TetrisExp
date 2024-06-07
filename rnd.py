@@ -77,28 +77,26 @@ class TetrisRandom(nn.Module):
         # state : image(1, 20, 20) / mino_pos(2,) / mino_rot(1,) / mino(one-hot) / hold(one-hot) / preview(one-hot * 5) / status(4,)
         self.img_feature = nn.Sequential(
             # input : (1, 20, 20)
-            nn.Conv2d(1, 32, kernel_size=8),  # (1, 13, 13, 32)
+            nn.Conv2d(1, 8, kernel_size=4, stride=1),  # (1, 17, 17, 8)
             nn.LeakyReLU(),
-            nn.Conv2d(32, 64, kernel_size=4), # (1, 10, 10, 64)
+            nn.Conv2d(8, 32, kernel_size=2, stride=2), # (1, 8, 8, 32)
             nn.LeakyReLU(),
-            nn.Conv2d(64, 64, kernel_size=3), # (1, 8, 8, 64)
-            nn.LeakyReLU(),
-            nn.Flatten(),                     # (1, 8 * 8 * 64)
-            nn.Linear(8 * 8 * 64, 256),
+            nn.Flatten(),                              # (1, 8 * 8 * 32)
+            nn.Linear(8 * 8 * 32, 128),
             nn.ReLU(),
         )
 
-        self.encode = nn.Linear(256 + 2, 32)
+        self.encode = nn.Linear(128 + 2, 32)
         self.mino_feature = nn.Linear(7 + 4, 32)
         self.hold_feature = nn.Linear(8, 32)
         self.preview_feature = nn.Linear(35, 32)
-        self.mhp_feature = nn.Linear(32 + 32 + 32, 256)
-        self.imhps_feature = nn.Linear(256 + 256 + 4, 512)
+        self.mhp_feature = nn.Linear(32 + 32 + 32, 128)
+        self.imhps_feature = nn.Linear(128 + 128 + 4, 256)
 
         self.critic = nn.Sequential(
-            nn.Linear(512, 512),
+            nn.Linear(256, 256),
             nn.ReLU(),
-            nn.Linear(512, 512)
+            nn.Linear(256, 256)
         )
 
         self.use_smirl = use_smirl
@@ -106,7 +104,7 @@ class TetrisRandom(nn.Module):
             self.smirl_feature = nn.Sequential(
                 nn.Linear(401, 256),
                 nn.ReLU(),
-                nn.Linear(256, 512),
+                nn.Linear(256, 256),
             )
             for i in range(len(self.smirl_feature)):
                 if type(self.smirl_feature[i]) == nn.Linear:
