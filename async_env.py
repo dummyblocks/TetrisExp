@@ -14,6 +14,8 @@ def worker(remote, parent_remote, env):
         elif cmd == 'reset':
             s, _ = env.reset()
             remote.send(s)
+        elif cmd == 'all':
+            remote.send(env.get_all_next_hd())
         elif cmd == 'close':
             remote.close()
             break
@@ -81,6 +83,10 @@ class SubprocEnvs:
         if self.recent is not None:
             return self.recent
         return self.reset()
+    
+    def get_all_next_hd(self, idx):
+        self.remotes[idx].send(('all', None))
+        return self.remotes[idx].recv()
 
     def close(self):
         if self.closed:
@@ -142,6 +148,9 @@ class SerialEnvs:
         if self.recent is not None:
             return self.recent
         return self.reset()
+    
+    def get_all_next_hd(self, idx):
+        return self.venv[idx].get_all_next_hd()
 
     def close(self):
         for i in range(self.nenvs):

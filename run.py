@@ -9,7 +9,7 @@ from async_env import *
 from model import TetrisActorCritic
 from rnd import TetrisRND
 
-from env import SinglePlayerTetris
+from env import TetrisWrapper, SinglePlayerTetris
 
 from tensorboardX import SummaryWriter
 
@@ -27,13 +27,11 @@ if __name__ == "__main__":
                 env = SinglePlayerTetris(render_mode='human')
             else:
                 env = SinglePlayerTetris()
-            env = gym.wrappers.FlattenObservation(env)
+            env = TetrisWrapper(env)
             envs.append(env)
     # else:
     #     env = gym.make(args.env_name)
     input_size = envs[0].observation_space.shape[0]
-    hidden_size = args.hidden_size
-    num_layers = args.num_layers
     output_size = envs[0].action_space.n
 
     smirl_size = 400
@@ -72,10 +70,12 @@ if __name__ == "__main__":
         int_coef=args.int_coef,
         epochs=args.epoch,
         workers=args.num_worker,
+        device=device,
         use_rnd='r' in args.algo,
         rnd=TetrisRND(use_smirl='s' in args.algo),
         use_smirl='s' in args.algo,
-        smirl_arg=smirl_size
+        smirl_arg=smirl_size,
+        group_actions=args.group_actions
     )
 
     if args.load_model:

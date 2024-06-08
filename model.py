@@ -158,11 +158,12 @@ class TetrisActorCritic(nn.Module):
     '''
     Actor-Critic Network only designed for TetrisEnv. ~950K params.
     '''
-    def __init__(self, input_size, output_size, use_smirl=False, noisy=False):
+    def __init__(self, input_size, output_size, use_smirl=False, noisy=False, epsilon=0.1):
         super().__init__()
         
         self.input_size = input_size
         self.output_size = output_size
+        self.epsilon = epsilon
 
         linear = NoisyLinear if noisy else nn.Linear
 
@@ -244,20 +245,25 @@ class TetrisActorCritic(nn.Module):
                 nn.init.orthogonal_(self.extra_layer[i].weight, 0.1)
                 self.extra_layer[i].bias.data.zero_()
 
-    def best_state(self, states):
+    def best_state(self, states, grouped_actions):
+        '''
+        Use epsilon-greedy policy
+        '''
         max_value = None
         best_state = None
-
+        best_actions = None
         if random.random() <= self.epsilon:
-            return random.choice(list(states))
+            return random.choice(list(zip(states, grouped_actions)))
         else:
-            for state in states:
-                value = self.predict_value(np.reshape(state, [1, self.input_size]))
+            for state, actions in zip(states, grouped_actions):
+                _, ve, vi, _, _, _ = self.forward(np.array(state).reshape([1,self.input_size]))
+                value = ve + vi
                 if not max_value or value > max_value:
                     max_value = value
                     best_state = state
+                    best_actions = actions
 
-        return best_state
+        return best_state, best_actions
 
     def forward(self, s):
         img, mino_pos, mino_rot, mino, hold, preview, status, smirl = parse_dict(s, self.use_smirl)

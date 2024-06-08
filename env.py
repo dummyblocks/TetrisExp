@@ -4,6 +4,106 @@ import numpy as np
 import tetris
 import pygame as pg
 import time
+from copy import deepcopy
+
+def _recur_search_pos(system, prog, last, visited, s, a):
+    mino = system.get_current_mino()
+    visited.append((mino.center.x, mino.center.y, mino.rotation_status))
+    obs = get_obs_from_system(system)
+    for i in range(7):
+        # 0: left, 1: right, 2: hard, 3: soft, 4: CCW, 5: CW, 6: hold
+        if (i < 2 or i == 3) and not last:
+            continue
+        if (i == 1 and last == 0) or (i == 0 and last == 1) or (i == 5 and last == 4) or (i == 4 and last == 5):
+            continue
+        if i == 2:
+            s.append(obs)
+            a.append(prog + [2])
+            del system, prog
+            return
+        new_system = deepcopy(system)
+        match i:
+            case 0:
+                new_system.try_move_left()
+            case 1:
+                new_system.try_move_right()
+            case 3:
+                new_system.try_soft_drop()
+            case 4:
+                new_system.try_rotate_rcw()
+            case 5:
+                new_system.try_rotate_cw()
+        new_mino = new_system.get_current_mino()
+        if (new_mino.center.x, new_mino.center.y, new_mino.rotation_status) in visited:
+            continue
+        _recur_search_pos(new_system, prog + [i], i, visited, s, a)
+        
+def get_obs_from_system(system):
+    field_with_cur_mino = np.array(system.field[20:], dtype=bool) * 1.0 # 3
+    mino = system.get_current_mino()
+    
+    for block in mino.blocks:
+        if block.x >= 0 and block.y >= 0:
+            field_with_cur_mino[block.y, block.x] = 0.7 #2
+
+    left_disp = np.zeros((20, 5),dtype=float)
+    holdblock = system.get_hold_mino()
+    if holdblock:
+        for block in holdblock.blocks:
+            left_disp[1+block.y, 1+block.x] = 1.0 # 1
+
+    right_disp = np.zeros((20, 5),dtype=float)
+    for idx, mn in enumerate(system.get_preview_mino_list()):
+        for block in mn.blocks:
+            right_disp[1+idx*4+block.y, 2+block.x] = 1.0 # 1
+
+    field_with_cur_mino = np.concatenate((left_disp, field_with_cur_mino, right_disp),axis=1)
+
+    mino_id = system._curr_mino_num
+    mino_pos = np.array([mino.center.x, mino.center.y], dtype=np.int64)
+    mino_rot = mino.rotation_status % 4
+
+    hold_id = system._hold_mino_num
+    if hold_id is False:
+        hold_id = 7
+    preview_ids = np.array(
+        (system._bag + system._next_bag)[: 5],
+        dtype=np.int64,
+    )
+
+    holdpossible = 0 if system._hold_used else 1
+    system.hard_drop()
+    lc = system.last_line_cleared
+    system.last_line_cleared = 0
+    ls = system.last_lines_sent
+    system.last_lines_sent = 0
+    il = system.incoming_garbage_next + system.receive_queue_lines
+    state = {
+        "image": field_with_cur_mino.reshape((1, *field_with_cur_mino.shape)).astype(float),
+        "mino_pos": mino_pos,
+        "mino_rot": mino_rot,
+        "mino": mino_id,
+        "hold": hold_id,
+        "preview": preview_ids,
+        "status": np.array([
+            lc,
+            ls,
+            il,
+            holdpossible,
+        ], dtype=np.int64),  # line cleared, lines sent, current line queue, hold possible
+    }
+    return state
+
+
+class TetrisWrapper(gym.wrappers.FlattenObservation):
+    def __init__(self, env):
+        super().__init__(env)
+
+    def get_all_next_hd(self):
+        states, actions = self.env.get_all_next_hd()
+        flattened = [self.observation(state) for state in states]
+        return flattened, actions
+
 
 class SinglePlayerTetris(gym.Env):
 
@@ -116,16 +216,13 @@ class SinglePlayerTetris(gym.Env):
         mino_rot = mino.rotation_status % 4
 
         hold_id = self.game.system._hold_mino_num
-        if hold_id == False:
-            hold_id = 0
-        else:
-            hold_id += 1
+        if hold_id is False:
+            hold_id = 7
         preview_ids = np.array(
             (self.game.system._bag + self.game.system._next_bag)[: self.preview_num],
             dtype=np.int64,
         )
-        if len(self.game.system._bag + self.game.system._next_bag) < self.preview_num:
-            print(self.game.system._bag, self.game.system._next_bag)
+
         lc = self.game.system.last_line_cleared
         self.last_line_cleared = lc
         self.game.system.last_line_cleared = 0
@@ -177,8 +274,72 @@ class SinglePlayerTetris(gym.Env):
         return self.state, self.reward, terminated, False, {}
 
     def get_reward(self):
-        return 4 * (self.last_line_cleared + self.last_lines_sent) ** 1.5 + self.game.system.outgoing_linedown_send()*0.1
+        return 4 * (self.last_line_cleared + self.last_lines_sent) ** 1.5 # + self.game.system.outgoing_linedown_send()*0.1
         return (self.last_line_cleared + self.last_lines_sent) ** 2 #+ self.game.system.outgoing_linedown_send()*0.25
+    
+    def get_all_next_hd(self):
+        states = []
+        group_actions = []
+        dx = (self.w - 4) // 2
+        for rot in range(-2, 3):
+            for delta_x in range(-dx,dx+1):  
+                # 0: left, 1: right, 2: hard, 3: soft, 4: CCW, 5: CW, #6: noop, 7: hold 
+                _system = deepcopy(self.game.system)
+                actions = []
+                if rot < 0:
+                    for _ in range(-rot):
+                        _system.try_rotate_rcw()
+                        actions.append(4)
+                else:
+                    for _ in range(rot):
+                        _system.try_rotate_cw()
+                        actions.append(5)
+                if delta_x < 0:
+                    for _ in range(-delta_x):
+                        _system.try_move_left()
+                        actions.append(0)
+                else:
+                    for _ in range(delta_x):
+                        _system.try_move_right()
+                        actions.append(1)
+                y = _system.get_current_mino().center.y
+                _system.fast_soft_drop()
+                ny = _system.get_current_mino().center.y
+                actions.extend([3] * int(y - ny))
+                visited = []
+                _recur_search_pos(_system, actions, None, visited, states, group_actions)
+
+                _system = deepcopy(self.game.system)
+                _system.hold()
+                actions = [6]
+                if rot < 0:
+                    for _ in range(-rot):
+                        _system.try_rotate_rcw()
+                        actions.append(4)
+                else:
+                    for _ in range(rot):
+                        _system.try_rotate_cw()
+                        actions.append(5)
+                if delta_x < 0:
+                    for _ in range(-delta_x):
+                        _system.try_move_left()
+                        actions.append(0)
+                else:
+                    for _ in range(delta_x):
+                        _system.try_move_right()
+                        actions.append(1)
+                y = _system.get_current_mino().center.y
+                _system.fast_soft_drop()
+                ny = _system.get_current_mino().center.y
+                actions.extend([3] * int(y - ny))
+                visited = []
+                _recur_search_pos(_system, actions, None, visited, states, group_actions)
+
+        return states, group_actions
+    
+    def calculate_finesse(self):
+        return 0
+
 
     def render(self):
         if self.render_mode is None:

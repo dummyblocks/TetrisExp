@@ -5,13 +5,14 @@ import torch.optim as optim
 from torch.distributions import Categorical
 from torch.utils.data import TensorDataset, DataLoader
 import numpy as np
+
 from memory import MemoryBuffer
 from rnd import RND
 from smirl import SMiRL
 from model import ActorNN, CriticNN
 from utils import *
+
 from tqdm import tqdm
-from copy import deepcopy
 import os
 
 update_proportion = 0.25
@@ -35,8 +36,9 @@ class PPO:
                  gamma_ext, gamma_int,
                  v_coef, ent_coef,
                  ext_coef, int_coef,
-                 epochs, workers,
-                 use_rnd=False, rnd=None, use_smirl=False, smirl_arg=None):
+                 epochs, workers, device,
+                 use_rnd=False, rnd=None, use_smirl=False, smirl_arg=None,
+                 group_actions=False):
         self.model = model
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
         self.clip_ratio = epsilon
@@ -61,6 +63,8 @@ class PPO:
         self.use_smirl = use_smirl
 
         self.workers = workers
+        self.group_actions = group_actions
+        self.device = device
 
         if use_rnd:
             self.rnd = rnd
@@ -100,12 +104,22 @@ class PPO:
     def step(self, envs):
         tot_s, tot_re, tot_done, tot_ns, tot_a = [], [], [], [], []
         tot_ri, tot_ve, tot_vi, tot_prob, tot_smirl_r = [], [], [], [], []
-        for _ in range(self.episode_len):
+        actionss = [[]] * self.workers
+        for _ in tqdm(range(self.episode_len),desc=f'Rollout',mininterval=0.5):
             s = envs.get_recent()
             if self.use_smirl:
                 s = add_smirl(s, self.smirl_nn)
             a, ve, vi, _, _, result = self.model(s)
+            if self.group_actions:
+                for i, actions in enumerate(actionss):
+                    if len(actions) == 0:
+                        _, actions = self.model.best_state(*envs.get_all_next_hd(i))
+                    a[i] = actions.pop()
             ns, re, done, _, _ = envs.step(a)
+            if self.group_actions:
+                for i, _done in enumerate(done):
+                    if _done:
+                        actionss[i].clear()
 
             if self.use_smirl:
                 smirl_r = np.array([np.clip(smirl.logprob(ns[:,8:408]) / 1000., -5., 5.) for smirl in self.smirl_nn])
@@ -185,7 +199,7 @@ class PPO:
             result['max_smirl_r'] = np.max(tot_smirl_r)
             result['min_smirl_r'] = np.min(tot_smirl_r)
             result['avg_smirl_r'] = np.mean(tot_smirl_r)
-        mean_len = envs.nenvs * self.episode_len / (np.sum(tot_done) + envs.nenvs)
+        mean_len = envs.nenvs * self.episode_len / (np.count_nonzero(tot_done) + envs.nenvs)
         if self.episode_len - mean_len < 10:
             envs.reset()
         result['episode_avg_len'] = mean_len
@@ -326,4 +340,3 @@ class PPO:
     def save(self, save_dir, env_name):
         model_path = os.path.join(save_dir, env_name + '.model')
         torch.save(self.model.state_dict(), model_path)
-

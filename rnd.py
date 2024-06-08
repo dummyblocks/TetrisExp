@@ -93,12 +93,6 @@ class TetrisRandom(nn.Module):
         self.mhp_feature = nn.Linear(32 + 32 + 32, 128)
         self.imhps_feature = nn.Linear(128 + 128 + 4, 256)
 
-        self.critic = nn.Sequential(
-            nn.Linear(256, 256),
-            nn.ReLU(),
-            nn.Linear(256, 256)
-        )
-
         self.use_smirl = use_smirl
         if use_smirl:
             self.smirl_feature = nn.Sequential(
@@ -148,9 +142,7 @@ class TetrisRandom(nn.Module):
                         torch.cat((img_feature, mhp_feature, status),dim=1)
                         ))
 
-        value = self.critic(imhps_feature)
-
-        return value
+        return imhps_feature
     
 
 class TetrisPredictor(TetrisRandom):

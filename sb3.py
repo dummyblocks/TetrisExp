@@ -26,10 +26,10 @@ model.set_logger(new_logger)
 checkpoint = CheckpointCallback(
     save_freq=1e6,
     save_path=tmp_path,
-    name_prefix="tetris_sb3_ppo_mlp_",
+    name_prefix="tetris_sb3_ppo_mlp_06-08",
     save_replay_buffer=True,
     save_vecnormalize=True,
 )
 
 model.learn(total_timesteps=1e7, progress_bar=True, callback=checkpoint,)
-model.save(f"tetris_sb3_ppo_nenv_1e7")
+model.save(f"tetris_sb3_ppo_nenv_1e7_06-08")
