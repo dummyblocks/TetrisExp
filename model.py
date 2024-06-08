@@ -170,22 +170,24 @@ class TetrisActorCritic(nn.Module):
         # state : image(1, 20, 20) / mino_pos(2,) / mino_rot(1,) / mino(one-hot) / hold(one-hot) / preview(one-hot * 5) / status(4,)
         self.img_feature = nn.Sequential(
             # input : (1, 20, 20)
-            nn.Conv2d(1, 8, kernel_size=4, stride=1),  # (1, 17, 17, 8)
+            nn.Conv2d(1, 16, kernel_size=6, stride=2),  # (1, 8, 8, 16)
             nn.LeakyReLU(),
-            nn.Conv2d(8, 32, kernel_size=2, stride=2), # (1, 8, 8, 32)
+            nn.Conv2d(16, 32, kernel_size=4, stride=1), # (1, 5, 5, 32)
             nn.LeakyReLU(),
-            nn.Flatten(),                              # (1, 8 * 8 * 32)
-            linear(8 * 8 * 32, 128),
+            nn.Conv2d(32, 32, kernel_size=3, stride=1), # (1, 3, 3, 32)
+            nn.LeakyReLU(),
+            nn.Flatten(),                              # (1, 3 * 3 * 32)
+            linear(3 * 3 * 32, 128),
             nn.ReLU(),
         )
 
-        #self.encode = linear(128 + 2, 32)
-        #self.mino_feature = linear(7 + 4, 32)
-        #self.hold_feature = linear(8, 32)
-        #self.preview_feature = linear(35, 32)
-        #self.mhp_feature = linear(32 + 32 + 32, 128)
-        #self.imhps_feature = linear(128 + 128 + 4, 256)
-        self.imhps_feature = linear(128 + 7 + 4 + 2 + 8 + 35 + 4, 256)
+        self.encode = linear(128 + 2, 32)
+        self.mino_feature = linear(7 + 4, 32)
+        self.hold_feature = linear(8, 32)
+        self.preview_feature = linear(35, 32)
+        self.mhp_feature = linear(32 + 32 + 32, 128)
+        self.imhps_feature = linear(128 + 128 + 4, 256)
+        #self.imhps_feature = linear(128 + 7 + 4 + 2 + 8 + 35 + 4, 256)
 
         self.actor = nn.Sequential(
             linear(256, 256),
@@ -218,16 +220,16 @@ class TetrisActorCritic(nn.Module):
                 nn.init.orthogonal_(m.weight, np.sqrt(2))
                 m.bias.data.zero_()
 
-        #nn.init.orthogonal_(self.encode.weight, 0.1)
-        #self.encode.bias.data.zero_()
-        #nn.init.orthogonal_(self.mino_feature.weight, 0.1)
-        #self.mino_feature.bias.data.zero_()
-        #nn.init.orthogonal_(self.hold_feature.weight, 0.1)
-        #self.hold_feature.bias.data.zero_()
-        #nn.init.orthogonal_(self.preview_feature.weight, 0.1)
-        #self.preview_feature.bias.data.zero_()
-        #nn.init.orthogonal_(self.mhp_feature.weight, 0.01)
-        #self.mhp_feature.bias.data.zero_()
+        nn.init.orthogonal_(self.encode.weight, 0.1)
+        self.encode.bias.data.zero_()
+        nn.init.orthogonal_(self.mino_feature.weight, 0.1)
+        self.mino_feature.bias.data.zero_()
+        nn.init.orthogonal_(self.hold_feature.weight, 0.1)
+        self.hold_feature.bias.data.zero_()
+        nn.init.orthogonal_(self.preview_feature.weight, 0.1)
+        self.preview_feature.bias.data.zero_()
+        nn.init.orthogonal_(self.mhp_feature.weight, 0.01)
+        self.mhp_feature.bias.data.zero_()
         nn.init.orthogonal_(self.imhps_feature.weight, 0.01)
         self.imhps_feature.bias.data.zero_()
 
@@ -267,36 +269,36 @@ class TetrisActorCritic(nn.Module):
         return best_state, best_actions
 
     def forward(self, s):
-        #img, mino_pos, mino_rot, mino, hold, preview, status, smirl = parse_dict(s, self.use_smirl)
-        img, others, smirl = parse_dict_simple(s, self.use_smirl)
+        img, mino_pos, mino_rot, mino, hold, preview, status, smirl = parse_dict(s, self.use_smirl)
+        #img, others, smirl = parse_dict_simple(s, self.use_smirl)
         
         img_feature = self.img_feature(img)
-        #mino_feature = F.relu(self.mino_feature(torch.cat((mino, mino_rot),dim=1)) + \
-        #                      self.encode(torch.cat((img_feature, mino_pos),dim=1)))
-        #hold_feature = F.relu(self.hold_feature(hold))
-        #preview_feature = F.relu(self.preview_feature(preview))
+        mino_feature = F.relu(self.mino_feature(torch.cat((mino, mino_rot),dim=1)) + \
+                              self.encode(torch.cat((img_feature, mino_pos),dim=1)))
+        hold_feature = F.relu(self.hold_feature(hold))
+        preview_feature = F.relu(self.preview_feature(preview))
         
-        #mhp_feature = F.relu(self.mhp_feature(
-        #                torch.cat((mino_feature, hold_feature, preview_feature),dim=1)
-        #                ))
-        #if self.use_smirl:
-        #    imhps_feature = F.relu(self.imhps_feature(
-        #                torch.cat((img_feature, mhp_feature, status),dim=1)
-        #                ) + self.smirl_feature(smirl))
-        #else:
-        #    imhps_feature = F.relu(self.imhps_feature(
-        #                torch.cat((img_feature, mhp_feature, status),dim=1)
-        #                ))
-        imhps_feature = F.relu(self.imhps_feature(
-                    torch.cat((img_feature, others),dim=1)
-                    ))
-
-        #result = F.softmax(self.actor(imhps_feature),dim=1)
+        mhp_feature = F.relu(self.mhp_feature(
+                        torch.cat((mino_feature, hold_feature, preview_feature),dim=1)
+                        ))
         if self.use_smirl:
-            smirl_feature = self.smirl_feature(smirl)
-            result = F.softmax(self.actor(imhps_feature + smirl_feature),dim=1)
+            imhps_feature = F.relu(self.imhps_feature(
+                        torch.cat((img_feature, mhp_feature, status),dim=1)
+                        ) + self.smirl_feature(smirl))
         else:
-            result = F.softmax(self.actor(imhps_feature),dim=1)
+            imhps_feature = F.relu(self.imhps_feature(
+                        torch.cat((img_feature, mhp_feature, status),dim=1)
+                        ))
+        #imhps_feature = F.relu(self.imhps_feature(
+        #           torch.cat((img_feature, others),dim=1)
+        #           ))
+
+        result = F.softmax(self.actor(imhps_feature),dim=1)
+        #if self.use_smirl:
+        #    smirl_feature = self.smirl_feature(smirl)
+        #    result = F.softmax(self.actor(imhps_feature + smirl_feature),dim=1)
+        #else:
+        #    result = F.softmax(self.actor(imhps_feature),dim=1)
         
         action_dist = Categorical(result)
         action = action_dist.sample()
