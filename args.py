@@ -56,6 +56,8 @@ def get_args():
                         help='Directory to save agent logs (default: trained_models/ALGORITHM_CURRENT_DATETIME)')
     parser.add_argument('--render', action='store_true', default=False,
                         help='Render training (default : False)')
+    parser.add_argument('--recursive', action='store_true', default=False,
+                        help='Recursive state search (default : False)')
     parser.add_argument('--env-name', default='SinglePlayerTetris',
                         help='Environment to train on (default: SinglePlayerTetris)')
 

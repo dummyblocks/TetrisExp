@@ -24,9 +24,9 @@ if __name__ == "__main__":
     if args.env_name == 'SinglePlayerTetris':
         for i in range(args.num_worker):
             if i == 0 and args.render:
-                env = SinglePlayerTetris(render_mode='human')
+                env = SinglePlayerTetris(render_mode='human', recursive=args.recursive)
             else:
-                env = SinglePlayerTetris()
+                env = SinglePlayerTetris(recursive=args.recursive)
             env = TetrisWrapper(env)
             envs.append(env)
     # else:

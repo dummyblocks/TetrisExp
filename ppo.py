@@ -111,10 +111,15 @@ class PPO:
                 s = add_smirl(s, self.smirl_nn)
             a, ve, vi, _, _, result = self.model(s)
             if self.group_actions:
-                for i, actions in enumerate(actionss):
-                    if len(actions) == 0:
-                        _, actions = self.model.best_state(*envs.get_all_next_hd(i))
-                    a[i] = actions.pop()
+                for i in range(self.workers):
+                    if len(actionss[i]) == 0:
+                        envs.get_all_next_hd(i)
+                envs.get_all_all_wait()
+                for i in range(self.workers):
+                    if len(actionss[i]) == 0:
+                        _, actions = self.model.best_state(*envs.get_all_wait(i))
+                        actionss[i].extend(actions)
+                    a[i] = actionss[i].pop()
             ns, re, done, _, _ = envs.step(a)
             if self.group_actions:
                 for i, _done in enumerate(done):

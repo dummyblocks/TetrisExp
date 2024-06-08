@@ -30,9 +30,11 @@ class SubprocEnvs:
         self.env = envs[0]
         self.name = name
         self.waiting = False
+        self.wait_all = False
         self.closed = False
         self.recent = None
         self.remotes, self.work_remotes = zip(*[Pipe() for _ in range(self.nenvs)])
+        self.remote_queue = []
         self.ps = [Process(target=worker, args=(work_remote, remote, env))
                    for (work_remote, remote, env) in zip(self.work_remotes, self.remotes, envs)]
         print('Start processes..')
@@ -85,7 +87,17 @@ class SubprocEnvs:
     
     def get_all_next_hd(self, idx):
         self.remotes[idx].send(('all', None))
-        return self.remotes[idx].recv()
+        self.remote_queue.append(self.remotes[idx])
+        self.wait_all = True
+
+    def get_all_all_wait(self):
+        if self.wait_all:
+            self.get = [remote.recv() if remote in self.remote_queue else None for remote in self.remotes]
+            self.remote_queue.clear()
+            self.wait_all = False
+    
+    def get_all_wait(self, idx):
+        return self.get[idx]
 
     def close(self):
         if self.closed:
@@ -150,6 +162,11 @@ class SerialEnvs:
     
     def get_all_next_hd(self, idx):
         return self.venv[idx].get_all_next_hd()
+    
+    def get_all_wait(self, idx):
+        if self.wait_all[idx]:
+            self.wait_all[idx] = False
+            return self.remotes[idx].recv()
 
     def close(self):
         for i in range(self.nenvs):

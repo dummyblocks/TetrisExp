@@ -309,3 +309,146 @@ class TetrisActorCritic(nn.Module):
 
         return action.detach(), value_ext, value_int, \
                log_prob.detach(), entropy.detach(), result
+    
+
+class TetrisQ(nn.Module):
+    '''
+    Q Network only designed for TetrisEnv. ~950K params.
+    '''
+    def __init__(self, input_size, output_size, use_smirl=False, noisy=False, epsilon=0.1):
+        super().__init__()
+        
+        self.input_size = input_size
+        self.output_size = output_size
+        self.epsilon = epsilon
+
+        linear = NoisyLinear if noisy else nn.Linear
+
+        # state : image(1, 20, 20) / mino_pos(2,) / mino_rot(1,) / mino(one-hot) / hold(one-hot) / preview(one-hot * 5) / status(4,)
+        self.img_feature = nn.Sequential(
+            # input : (1, 20, 20)
+            nn.Conv2d(1, 16, kernel_size=6, stride=2),  # (1, 8, 8, 16)
+            nn.LeakyReLU(),
+            nn.Conv2d(16, 32, kernel_size=4, stride=1), # (1, 5, 5, 32)
+            nn.LeakyReLU(),
+            nn.Conv2d(32, 32, kernel_size=3, stride=1), # (1, 3, 3, 32)
+            nn.LeakyReLU(),
+            nn.Flatten(),                              # (1, 3 * 3 * 32)
+            linear(3 * 3 * 32, 128),
+            nn.ReLU(),
+        )
+
+        self.encode = linear(128 + 2, 32)
+        self.mino_feature = linear(7 + 4, 32)
+        self.hold_feature = linear(8, 32)
+        self.preview_feature = linear(35, 32)
+        self.mhp_feature = linear(32 + 32 + 32, 128)
+        self.imhps_feature = linear(128 + 128 + 4, 256)
+        #self.imhps_feature = linear(128 + 7 + 4 + 2 + 8 + 35 + 4, 256)
+
+        self.extra_layer = nn.Sequential(
+            linear(256, 256),
+            nn.ReLU(),
+        )
+
+        self.critic = linear(256, 7)
+
+        self.use_smirl = use_smirl
+        if use_smirl:
+            self.smirl_feature = nn.Sequential(
+                linear(401, 256),
+                nn.ReLU(),
+                linear(256, 256),
+            )
+            for i in range(len(self.smirl_feature)):
+                if type(self.smirl_feature[i]) == nn.Linear:
+                    nn.init.orthogonal_(self.smirl_feature[i].weight, 0.1)
+                    self.smirl_feature[i].bias.data.zero_()
+
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
+                nn.init.orthogonal_(m.weight, np.sqrt(2))
+                m.bias.data.zero_()
+
+        nn.init.orthogonal_(self.encode.weight, 0.1)
+        self.encode.bias.data.zero_()
+        nn.init.orthogonal_(self.mino_feature.weight, 0.1)
+        self.mino_feature.bias.data.zero_()
+        nn.init.orthogonal_(self.hold_feature.weight, 0.1)
+        self.hold_feature.bias.data.zero_()
+        nn.init.orthogonal_(self.preview_feature.weight, 0.1)
+        self.preview_feature.bias.data.zero_()
+        nn.init.orthogonal_(self.mhp_feature.weight, 0.01)
+        self.mhp_feature.bias.data.zero_()
+        nn.init.orthogonal_(self.imhps_feature.weight, 0.01)
+        self.imhps_feature.bias.data.zero_()
+
+        nn.init.orthogonal_(self.critic_ext.weight, 0.01)
+        self.critic_ext.bias.data.zero_()
+        nn.init.orthogonal_(self.critic_int.weight, 0.01)
+        self.critic_int.bias.data.zero_()
+
+        for i in range(len(self.actor)):
+            if type(self.actor[i]) == nn.Linear:
+                nn.init.orthogonal_(self.actor[i].weight, 0.01)
+                self.actor[i].bias.data.zero_()
+
+        for i in range(len(self.extra_layer)):
+            if type(self.extra_layer[i]) == nn.Linear:
+                nn.init.orthogonal_(self.extra_layer[i].weight, 0.1)
+                self.extra_layer[i].bias.data.zero_()
+
+    def best_state(self, states, grouped_actions):
+        '''
+        Use epsilon-greedy policy
+        '''
+        max_value = None
+        best_state = None
+        best_actions = None
+        if random.random() <= self.epsilon:
+            return random.choice(list(zip(states, grouped_actions)))
+        else:
+            for state, actions in zip(states, grouped_actions):
+                _, ve, vi, _, _, _ = self.forward(np.array(state).reshape([1,self.input_size]))
+                value = ve + vi
+                if not max_value or value > max_value:
+                    max_value = value
+                    best_state = state
+                    best_actions = actions
+
+        return best_state, best_actions
+
+    def forward(self, s):
+        img, mino_pos, mino_rot, mino, hold, preview, status, smirl = parse_dict(s, self.use_smirl)
+        #img, others, smirl = parse_dict_simple(s, self.use_smirl)
+        
+        img_feature = self.img_feature(img)
+        mino_feature = F.relu(self.mino_feature(torch.cat((mino, mino_rot),dim=1)) + \
+                              self.encode(torch.cat((img_feature, mino_pos),dim=1)))
+        hold_feature = F.relu(self.hold_feature(hold))
+        preview_feature = F.relu(self.preview_feature(preview))
+        
+        mhp_feature = F.relu(self.mhp_feature(
+                        torch.cat((mino_feature, hold_feature, preview_feature),dim=1)
+                        ))
+        if self.use_smirl:
+            imhps_feature = F.relu(self.imhps_feature(
+                        torch.cat((img_feature, mhp_feature, status),dim=1)
+                        ) + self.smirl_feature(smirl))
+        else:
+            imhps_feature = F.relu(self.imhps_feature(
+                        torch.cat((img_feature, mhp_feature, status),dim=1)
+                        ))
+        #imhps_feature = F.relu(self.imhps_feature(
+        #            torch.cat((img_feature, others),dim=1)
+        #            ))
+
+        #result = F.softmax(self.actor(imhps_feature),dim=1)
+        if self.use_smirl:
+            smirl_feature = self.smirl_feature(smirl)
+            result = self.critic(imhps_feature + smirl_feature)
+        else:
+            result = self.critic(imhps_feature)
+
+        return result
+    
