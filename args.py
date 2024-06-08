@@ -32,8 +32,8 @@ def get_args():
                         help='Use NoisyNet (default: False)')
     parser.add_argument('--epoch', type=int, default=10,
                         help='number of epochs (default: 10)')
-    parser.add_argument('--num-episode', type=int, default=1250,
-                        help='number of episodes (default: 1250)')
+    parser.add_argument('--num-episode', type=int, default=125,
+                        help='number of episodes (default: 125)')
     parser.add_argument('--mini-batch', type=int, default=64,
                         help='Number of batches (default: 64)')
     parser.add_argument('--critic_coef', type=int, default=0.5,

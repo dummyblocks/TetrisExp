@@ -60,6 +60,14 @@ class System:
         [(-1, +1), (-1, -1), (+1, +1), (+1, -1)],  # West
     )
     _tspin_hole_check_dirs = [(0, -1), (+1, 0), (0, +1), (-1, 0)]
+    _rotation_range = {
+        I: range(2), O: range(1), S: range(2), Z: range(2), L: range(4), J: range(4), T: range(4)
+    }
+    _rotation_movement_range = {
+        I: [range(-3, 4), range(-5, 5)], O: [range(-4, 5)], S: [range(-3, 5), range(-4, 5)], Z: [range(-3, 5), range(-4, 5)],
+        L: [range(-3, 5), range(-3, 6), range(-3, 5), range(-4, 5)], J: [range(-3, 5), range(-3, 6), range(-3, 5), range(-4, 5)],
+        T: [range(-3, 5), range(-3, 6), range(-3, 5), range(-3, 6)]
+    }
 
     def __init__(self, w, h, preview_num=5):
         """
@@ -307,15 +315,23 @@ class System:
 
     def try_move_right(self):
         #self.turn_on_auto_move_right()
-        self._try_move_x(1)
+        return self._try_move_x(1)
 
     def try_move_left(self):
         #self.turn_on_auto_move_left()
-        self._try_move_x(-1)
+        return self._try_move_x(-1)
 
     def _try_move_x(self, dx):
         if self._is_enable_move_x(dx):
             self._move_x(dx)
+            return True
+        return False
+    
+    def move_right(self):
+        return self._move_x(1)
+    
+    def move_left(self):
+        return self._move_x(-1)
 
     def try_soft_drop(self): # manual soft drop
         if self._is_enable_move_y():
@@ -334,16 +350,18 @@ class System:
         self._sdf_count = 0
 
     def try_rotate_rcw(self):
-        self._try_rotate(RCW)
+        return self._try_rotate(RCW)
 
     def try_rotate_cw(self):
-        self._try_rotate(CW)
+        return self._try_rotate(CW)
 
     def _try_rotate(self, rotation):
         rotation_point = self._is_enable_rotate(rotation)
         if rotation_point:
             self._last_rot_point = rotation_point
             self._rotation_status_update(rotation)
+            return True
+        return False
 
     def _check_tspin(self):
         # Check Guideline Tetris
@@ -358,7 +376,7 @@ class System:
             npos: Pos = mino_pos + dpos
             status1 = self._is_over_y_boundary(npos.y)
             status2 = self._is_over_x_boundary(npos.x)
-            if status1 or status2 or self._is_field_filled(npos):
+            if status1 or status2 or self._is_field_filled(npos.x, npos.y):
                 corners.append(1)
             else:
                 corners.append(0)
@@ -396,7 +414,7 @@ class System:
     def _tspin_hole(self, block):
         status1 = self._is_over_y_boundary(block.y)
         status2 = self._is_over_x_boundary(block.x)
-        if not (status1 or status2 or self._is_field_filled(block)):
+        if not (status1 or status2 or self._is_field_filled(block.x, block.y)):
             # block is filled...
             return False  # Not a Hole
 
@@ -404,7 +422,7 @@ class System:
             npos = block + (dx, dy)
             status1 = self._is_over_y_boundary(npos.y)
             status2 = self._is_over_x_boundary(npos.x)
-            if not (status1 or status2 or self._is_field_filled(npos)):
+            if not (status1 or status2 or self._is_field_filled(npos.x, npos.y)):
                 return False  # not filled -> Open!
         return True  # Hole!!
 
@@ -459,6 +477,7 @@ class System:
         send_mino = deepcopy(self.curr_mino)
         for block in send_mino.blocks:
             block.sub((0, self.h_padding))
+        send_mino.center.sub((0, self.h_padding))
         return send_mino
 
     def get_preview_mino_list(self):
@@ -496,12 +515,19 @@ class System:
         return ghost_mino
 
     def get_draw_field(self):
+        assert len(self.field) == self.h + self.h_padding
         return self.field[self.h_padding :]
 
     def _set_curr_mino_init_position(self):
         for block_pos in self.curr_mino.blocks:
             block_pos.add(self._init_mino_pos)
         self.curr_mino.center += self._init_mino_pos
+
+    def get_mino_rotation_range(self):
+        return System._rotation_range[self.get_current_mino().name]
+    
+    def get_mino_move_range(self, rot):
+        return System._rotation_movement_range[self.get_current_mino().name][rot]
 
     def _check_y_gravity_time(self, fps):
         self._sdf_count += self._sdf_stack
@@ -574,7 +600,7 @@ class System:
             block.add(rotate_offset_option)
             status1 = self._is_over_y_boundary(block.y)
             status2 = self._is_over_x_boundary(block.x)
-            if status1 or status2 or self._is_field_filled(block):
+            if status1 or status2 or self._is_field_filled(block.x, block.y):
                 return False
         return True
 
@@ -704,7 +730,7 @@ class System:
         return True
 
     def _is_over_y_boundary(self, y):
-        return y > self.h + self.h_padding - 1
+        return y < 0 or y > self.h + self.h_padding - 1
 
     def _is_over_x_boundary(self, x):
         return x < 0 or x > self.w - 1
@@ -735,8 +761,17 @@ class System:
 
     def copy(self):
         system = System(self.w, self.h, self.preview_num)
-        system.field = self.field
-        system.curr_mino = self.curr_mino
+        assert len(self.field) == self.h + self.h_padding
+        system.field = deepcopy(self.field)
+        system.curr_mino = deepcopy(self.curr_mino)
+        system._hold_mino_num = self._hold_mino_num
+        system._hold_used = self._hold_used
+        system._bag = deepcopy(self._bag)
+        system._next_bag = deepcopy(self._next_bag)
+        system.last_line_cleared = self.last_line_cleared
+        system.last_line_down = self.last_line_down
+        system.last_lines_sent = self.last_lines_sent
+        system.incoming_garbage_next = self.incoming_garbage_next
 
         return system
 

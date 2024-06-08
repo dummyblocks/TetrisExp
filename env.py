@@ -6,36 +6,64 @@ from collections import deque
 import pygame as pg
 import time
 
-def _recur_search_pos(system, prog, last, visited, s, a):
+def _get_action_sequence(system, actions, rot, delta_x, fast_sd=False):
+    if rot > 2:
+        for _ in range(4-rot):
+            if system.try_rotate_rcw():
+                actions.append(4)
+    else:
+        for _ in range(rot):
+            if system.try_rotate_cw():
+                actions.append(5)
+    if delta_x < 0:
+        for _ in range(-delta_x):
+            if system.try_move_left():
+                actions.append(0)
+    else:
+        for _ in range(delta_x):
+            if system.try_move_right():
+                actions.append(1)      
+    y = system.get_current_mino().center.y
+    system.fast_soft_drop()
+    ny = system.get_current_mino().center.y
+    if fast_sd:
+        actions.append(3)
+    else:
+        actions.extend([3] * int(ny - y))
+
+    return _get_state(system.get_current_mino())
+
+def _get_state(mino):
+    return (mino.center.x, mino.center.y, mino.rotation_status)
+
+def _recur_search_pos(system, mino, prog, last, visited, s, a):
     mino = system.get_current_mino()
-    visited.append((mino.center.x, mino.center.y, mino.rotation_status))
-    obs = get_obs_from_system(system)
-    print((mino.center.x, mino.center.y, mino.rotation_status), prog)
     for i in range(6):
         # 0: left, 1: right, 2: hard, 3: soft, 4: CCW, 5: CW
         if i == 3:
             continue
         if (i == 1 and last == 0) or (i == 0 and last == 1) or (i == 5 and last == 4) or (i == 4 and last == 5):
             continue
-        if i == 2:
-            s.append(obs)
-            a.append(prog + [2])
-            del system, prog
-            return
         new_system = system.copy()
+        if i == 2:
+            new_system.hard_drop()
+            s.append(get_obs_from_system(new_system))
+            a.append(prog + [2])
+            continue
         match i:
             case 0:
-                new_system.try_move_left()
+                success = new_system.try_move_left()
             case 1:
-                new_system.try_move_right()
+                success = new_system.try_move_right()
             case 4:
-                new_system.try_rotate_rcw()
+                success = new_system.try_rotate_rcw()
             case 5:
-                new_system.try_rotate_cw()
+                success = new_system.try_rotate_cw()
         new_mino = new_system.get_current_mino()
-        if (new_mino.center.x, new_mino.center.y, new_mino.rotation_status) in visited:
-            continue
-        _recur_search_pos(new_system, prog + [i], i, visited, s, a)
+        if success and mino.center.y < new_mino.center.y and \
+           _get_state(new_mino) not in visited:
+            visited.add(_get_state(new_mino))
+            _recur_search_pos(new_system, prog + [i], i, visited, s, a)
         
 def get_obs_from_system(system):
     field_with_cur_mino = np.array(system.field[20:], dtype=bool) * 1.0 # 3
@@ -71,11 +99,8 @@ def get_obs_from_system(system):
     )
 
     holdpossible = 0 if system._hold_used else 1
-    system.hard_drop()
     lc = system.last_line_cleared
-    system.last_line_cleared = 0
     ls = system.last_lines_sent
-    system.last_lines_sent = 0
     il = system.incoming_garbage_next + system.receive_queue_lines
     state = {
         "image": field_with_cur_mino.reshape((1, *field_with_cur_mino.shape)).astype(float),
@@ -149,7 +174,8 @@ class SinglePlayerTetris(gym.Env):
 
     metadata = {"render_modes": ["human"], "render_fps": 60}
 
-    def __init__(self, render_mode=None, fps=3, fast_soft=False, draw_ghost=True, auto_drop=False, draw_hold_next=True, enable_no_op=False) -> None:
+    def __init__(self, render_mode=None, fps=3, fast_soft=True, draw_ghost=True,
+                 auto_drop=False, draw_hold_next=True, enable_no_op=False, recursive=False) -> None:
         super().__init__()
         self.w = 10
         self.h = 20
@@ -163,6 +189,7 @@ class SinglePlayerTetris(gym.Env):
         self.draw_ghost = draw_ghost
         self.auto_drop = auto_drop
         self.draw_hold_next = draw_hold_next
+        self.recursive = recursive   # set recursive for searching next states
 
         self.game = tetris.Game(
             self.w,
@@ -214,7 +241,6 @@ class SinglePlayerTetris(gym.Env):
         if self.fast_sd:
             self.action_fp[3]=self.game.system.fast_soft_drop
 
-
     def reset(self, seed=None, options=None):
         super().reset(seed=seed, options=options)
         self.reward = 0
@@ -226,7 +252,7 @@ class SinglePlayerTetris(gym.Env):
 
     def _get_obs_from_game(self):
         #field = np.array(self.game.system.field[self.h :], dtype=bool) * 3
-        field_with_cur_mino = np.array(self.game.system.field[self.h :], dtype=bool) * 1.0 # 3
+        field_with_cur_mino = np.array(self.game.system.get_draw_field(), dtype=bool) * 1.0 # 3
 
         self.agg_height, self.bumpiness = calc_height_bumpiness(field_with_cur_mino)
         self.holes = count_holes(field_with_cur_mino)
@@ -252,7 +278,10 @@ class SinglePlayerTetris(gym.Env):
             for idx, mn in enumerate(self.game.system.get_preview_mino_list()):
                 for block in mn.blocks:
                     right_disp[1+idx*4+block.y, 2+block.x] = 1.0 # 1
-            field_with_cur_mino = np.concatenate((left_disp, field_with_cur_mino, right_disp),axis=1)
+            try:
+                field_with_cur_mino = np.concatenate((left_disp, field_with_cur_mino, right_disp),axis=1)
+            except Exception:
+                print(left_disp.shape, field_with_cur_mino.shape, right_disp.shape)
 
         mino_id = self.game.system._curr_mino_num
         mino_pos = np.array([mino.center.x, mino.center.y], dtype=np.int64)
@@ -302,6 +331,7 @@ class SinglePlayerTetris(gym.Env):
 
         self.game.system.frame_check(self.fps,auto_drop=self.auto_drop)
         self.action_fp[action]()
+        assert len(self.game.system.field) == self.game.system.h + self.game.system.h_padding
 
         #line_send = self.game.system.outgoing_garbage_send()
         #self.game.system.receive_garbage(line_send)
@@ -321,72 +351,77 @@ class SinglePlayerTetris(gym.Env):
         return (self.last_line_cleared + self.last_lines_sent) ** 2 #+ self.game.system.outgoing_linedown_send()*0.25
     
     def get_all_next_hd(self):
+        if self.recursive:
+            return self._get_all_next_hd()
+        else:
+            return self._get_next_hd()
+
+    def _get_next_hd(self):
         states = []
         group_actions = []
         dx = self.w // 2
-        visited = []
-        for rot in range(-2, 3):
-            for delta_x in range(-dx, dx+1):
-                mino = self.game.system.get_current_mino()
-                print(mino.center.x, mino.center.y)
-                visited.append([(mino.center.x, mino.center.y, mino.rotation_status)])
-        for rot in range(-2, 3):
-            for delta_x in range(-dx,dx+1):  
-                # 0: left, 1: right, 2: hard, 3: soft, 4: CCW, 5: CW, #6: noop, 7: hold 
-                _system = self.game.system.copy()
+        game_system = self.game.system.copy()
+        for rot in game_system.get_mino_rotation_range():
+            for delta_x in game_system.get_mino_move_range(rot):
+                _system = game_system.copy()
                 actions = []
-                if rot < 0:
-                    for _ in range(-rot):
-                        _system.try_rotate_rcw()
-                        actions.append(4)
-                else:
-                    for _ in range(rot):
-                        _system.try_rotate_cw()
-                        actions.append(5)
-                if delta_x < 0:
-                    for _ in range(-delta_x):
-                        _system.try_move_left()
-                        actions.append(0)
-                else:
-                    for _ in range(delta_x):
-                        _system.try_move_right()
-                        actions.append(1)
-                y = _system.get_current_mino().center.y
-                _system.fast_soft_drop()
-                ny = _system.get_current_mino().center.y
-                actions.extend([3] * int(y - ny))
-                _recur_search_pos(_system, actions, None, visited, states, group_actions)
+                _get_action_sequence(_system, actions, rot, delta_x, self.fast_sd)
+                states.append(get_obs_from_system(_system))
+                group_actions.append(actions)
+                del _system
 
-                _system = self.game.system.copy()
-                _system.hold()
-                actions = [6]
-                if rot < 0:
-                    for _ in range(-rot):
-                        _system.try_rotate_rcw()
-                        actions.append(4)
-                else:
-                    for _ in range(rot):
-                        _system.try_rotate_cw()
-                        actions.append(5)
-                if delta_x < 0:
-                    for _ in range(-delta_x):
-                        _system.try_move_left()
-                        actions.append(0)
-                else:
-                    for _ in range(delta_x):
-                        _system.try_move_right()
-                        actions.append(1)
-                y = _system.get_current_mino().center.y
-                _system.fast_soft_drop()
-                ny = _system.get_current_mino().center.y
-                actions.extend([3] * int(y - ny))
-                _recur_search_pos(_system, actions, None, visited, states, group_actions)
+                _system = game_system.copy()
+                if not _system.get_hold_mino() or not _system._hold_used:
+                    _system.hold()
+                    actions = [6]
+                    states.append(get_obs_from_system(_system))
+                    group_actions.append(actions)
+                del _system
 
         return states, group_actions
-    
-    def calculate_finesse(self):
-        return 0
 
+    def _get_all_next_hd(self):
+        states = []
+        group_actions = []
+        dx = self.w // 2
+        visited = set()
+        game_system = self.game.system.copy()
+        for rot in range(-2, 3):
+            for delta_x in range(-dx, dx+1):
+                _system = game_system.copy()
+                actions = []
+                final_state = _get_action_sequence(_system, actions, rot, delta_x, self.fast_sd)
+                visited.add(final_state)
+
+        for rot in range(-2, 3):
+            for delta_x in range(-dx, dx+1):
+                _system = game_system.copy()
+                actions = []
+                final_state = _get_action_sequence(_system, actions, rot, delta_x, self.fast_sd)
+                assert final_state in visited
+                _recur_search_pos(_system, actions, None, visited, states, group_actions)
+
+        visited.clear()
+
+        for rot in range(-2, 3):
+            for delta_x in range(-dx,dx+1):
+                _system = game_system.copy()
+                _system.hold()
+                actions = [6]
+                final_state = _get_action_sequence(_system, actions, rot, delta_x, self.fast_sd)
+                visited.add(final_state)
+                del _system
+
+        for rot in range(-2, 3):
+            for delta_x in range(-dx,dx+1):
+                _system = game_system.copy()
+                _system.hold()
+                actions = [6]
+                _get_action_sequence(_system, actions, rot, delta_x, self.fast_sd)
+                _recur_search_pos(_system, actions, None, visited, states, group_actions)
+                del _system
+
+        return states, group_actions
 
     def render(self):
         if self.render_mode is None:
