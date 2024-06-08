@@ -36,7 +36,7 @@ def _get_action_sequence(system, actions, rot, delta_x, fast_sd=False):
 def _get_state(mino):
     return (mino.center.x, mino.center.y, mino.rotation_status)
 
-def _recur_search_pos(system, mino, prog, last, visited, s, a):
+def _recur_search_pos(system, prog, last, visited, s, a):
     mino = system.get_current_mino()
     for i in range(6):
         # 0: left, 1: right, 2: hard, 3: soft, 4: CCW, 5: CW
@@ -244,6 +244,8 @@ class SinglePlayerTetris(gym.Env):
     def reset(self, seed=None, options=None):
         super().reset(seed=seed, options=options)
         self.reward = 0
+        self.ep_reward = 0
+        self.ep_len = 0
         self.game.system.init()
         state = self._get_obs_from_game()
         if self.render_mode == "human":
@@ -342,9 +344,12 @@ class SinglePlayerTetris(gym.Env):
             self.reward -= 10
         #if self.reward == 0:
         #    self.reward = -0.01
+        self.ep_reward += self.reward
+        self.ep_len += 1
         if self.render_mode == "human":
             self.render()
-        return self.state, self.reward, terminated, False, {}
+        return self.state, self.reward, terminated, \
+            False, {'episode_len': self.ep_len, 'episode_reward': self.ep_reward, 'score': self.game.system.total_score}
 
     def get_reward(self):
         return 4 * (self.last_line_cleared + self.last_lines_sent) ** 1.5 # + self.game.system.outgoing_linedown_send()*0.1
@@ -370,13 +375,13 @@ class SinglePlayerTetris(gym.Env):
                 group_actions.append(actions)
                 del _system
 
-                _system = game_system.copy()
-                if not _system.get_hold_mino() or not _system._hold_used:
-                    _system.hold()
-                    actions = [6]
-                    states.append(get_obs_from_system(_system))
-                    group_actions.append(actions)
-                del _system
+        _system = game_system.copy()
+        if not _system.get_hold_mino() or not _system._hold_used:
+            _system.hold()
+            actions = [6]
+            states.append(get_obs_from_system(_system))
+            group_actions.append(actions)
+        del _system
 
         return states, group_actions
 
@@ -386,40 +391,28 @@ class SinglePlayerTetris(gym.Env):
         dx = self.w // 2
         visited = set()
         game_system = self.game.system.copy()
-        for rot in range(-2, 3):
-            for delta_x in range(-dx, dx+1):
+        for rot in game_system.get_mino_rotation_range():
+            for delta_x in game_system.get_mino_move_range(rot):
                 _system = game_system.copy()
                 actions = []
                 final_state = _get_action_sequence(_system, actions, rot, delta_x, self.fast_sd)
                 visited.add(final_state)
 
-        for rot in range(-2, 3):
-            for delta_x in range(-dx, dx+1):
+        for rot in game_system.get_mino_rotation_range():
+            for delta_x in game_system.get_mino_move_range(rot):
                 _system = game_system.copy()
                 actions = []
                 final_state = _get_action_sequence(_system, actions, rot, delta_x, self.fast_sd)
                 assert final_state in visited
                 _recur_search_pos(_system, actions, None, visited, states, group_actions)
 
-        visited.clear()
-
-        for rot in range(-2, 3):
-            for delta_x in range(-dx,dx+1):
-                _system = game_system.copy()
-                _system.hold()
-                actions = [6]
-                final_state = _get_action_sequence(_system, actions, rot, delta_x, self.fast_sd)
-                visited.add(final_state)
-                del _system
-
-        for rot in range(-2, 3):
-            for delta_x in range(-dx,dx+1):
-                _system = game_system.copy()
-                _system.hold()
-                actions = [6]
-                _get_action_sequence(_system, actions, rot, delta_x, self.fast_sd)
-                _recur_search_pos(_system, actions, None, visited, states, group_actions)
-                del _system
+        _system = game_system.copy()
+        if not _system.get_hold_mino() or not _system._hold_used:
+            _system.hold()
+            actions = [6]
+            states.append(get_obs_from_system(_system))
+            group_actions.append(actions)
+        del _system
 
         return states, group_actions
 
