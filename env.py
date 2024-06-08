@@ -95,46 +95,44 @@ def get_obs_from_system(system):
 
 def calc_height_bumpiness(field):
     count = 0
-    x = list(range(field.shape[1]))
     heights = [0] * field.shape[1]
-    for y in range(field.shape[0]-1,-1,-1):
-        for _x in x:
-            if _x >= 0 and field[y,_x] > 0:
-                x[_x]=-1
-                heights[_x] = y + 1
+    for y in range(0,field.shape[0]):
+        for x in range(field.shape[1]):
+            if heights[x] == 0 and field[y,x] > 0:
+                heights[x] = field.shape[0] - y
     for x in range(field.shape[1]-1):
         count += np.abs(heights[x+1] - heights[x])
     return np.sum(heights), count
 
 def count_holes(field):
     _field = np.ones((field.shape[0]+2,field.shape[1]+2),dtype=np.int8)
-    _field[-1,:] = np.zeros((field.shape[1]+2))
+    _field[0,:] = np.zeros((field.shape[1]+2),dtype=np.int8)
     _field[1:-1,1:-1] = field.astype(np.int8)
     queue = deque()
     delta = [(-1,0),(1,0),(0,1),(0,-1)]
-    visit = []
-    count = 2
-    queue.append((0,0))
+    visit = [(0,0),(1,0)]
+    count = _field.shape[0] * _field.shape[1]
+    queue.append((1,0))
     while len(queue) > 0:
         y, x = queue.popleft()
+        count -= 1
         for dy, dx in delta:
             new = (y+dy, x+dx)
             if 0  <= new[0] < _field.shape[0] and 0 <= new[1] < _field.shape[1] \
                and _field[new[0],new[1]] == 1 and new not in visit:
                 visit.append(new)
                 queue.append(new)
-                count += 1
-    queue.append((field.shape[0]+1,0))
+    queue.append((0,0))
     while len(queue) > 0:
         y, x = queue.popleft()
+        count -= 1
         for dy, dx in delta:
             new = (y+dy, x+dx)
             if 0  <= new[0] < _field.shape[0] and 0 <= new[1] < _field.shape[1] \
                and _field[new[0],new[1]] == 0 and new not in visit:
                 visit.append(new)
                 queue.append(new)
-                count += 1
-    return (field.shape[0] + 2)*(field.shape[1] + 2) - count
+    return count
 
 
 class TetrisWrapper(gym.wrappers.FlattenObservation):
@@ -232,7 +230,6 @@ class SinglePlayerTetris(gym.Env):
 
         self.agg_height, self.bumpiness = calc_height_bumpiness(field_with_cur_mino)
         self.holes = count_holes(field_with_cur_mino)
-        print(self.agg_height, self.holes, self.bumpiness)
 
         mino = self.game.system.get_current_mino()
         
