@@ -2,17 +2,18 @@ import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 import tetris
+from collections import deque
 import pygame as pg
 import time
-from copy import deepcopy
 
 def _recur_search_pos(system, prog, last, visited, s, a):
     mino = system.get_current_mino()
     visited.append((mino.center.x, mino.center.y, mino.rotation_status))
     obs = get_obs_from_system(system)
-    for i in range(7):
-        # 0: left, 1: right, 2: hard, 3: soft, 4: CCW, 5: CW, 6: hold
-        if (i < 2 or i == 3) and not last:
+    print((mino.center.x, mino.center.y, mino.rotation_status), prog)
+    for i in range(6):
+        # 0: left, 1: right, 2: hard, 3: soft, 4: CCW, 5: CW
+        if i == 3:
             continue
         if (i == 1 and last == 0) or (i == 0 and last == 1) or (i == 5 and last == 4) or (i == 4 and last == 5):
             continue
@@ -21,14 +22,12 @@ def _recur_search_pos(system, prog, last, visited, s, a):
             a.append(prog + [2])
             del system, prog
             return
-        new_system = deepcopy(system)
+        new_system = system.copy()
         match i:
             case 0:
                 new_system.try_move_left()
             case 1:
                 new_system.try_move_right()
-            case 3:
-                new_system.try_soft_drop()
             case 4:
                 new_system.try_rotate_rcw()
             case 5:
@@ -93,6 +92,49 @@ def get_obs_from_system(system):
         ], dtype=np.int64),  # line cleared, lines sent, current line queue, hold possible
     }
     return state
+
+def calc_height_bumpiness(field):
+    count = 0
+    x = list(range(field.shape[1]))
+    heights = [0] * field.shape[1]
+    for y in range(field.shape[0]-1,-1,-1):
+        for _x in x:
+            if _x >= 0 and field[y,_x] > 0:
+                x[_x]=-1
+                heights[_x] = y + 1
+    for x in range(field.shape[1]-1):
+        count += np.abs(heights[x+1] - heights[x])
+    return np.sum(heights), count
+
+def count_holes(field):
+    _field = np.ones((field.shape[0]+2,field.shape[1]+2),dtype=np.int8)
+    _field[-1,:] = np.zeros((field.shape[1]+2))
+    _field[1:-1,1:-1] = field.astype(np.int8)
+    queue = deque()
+    delta = [(-1,0),(1,0),(0,1),(0,-1)]
+    visit = []
+    count = 2
+    queue.append((0,0))
+    while len(queue) > 0:
+        y, x = queue.popleft()
+        for dy, dx in delta:
+            new = (y+dy, x+dx)
+            if 0  <= new[0] < _field.shape[0] and 0 <= new[1] < _field.shape[1] \
+               and _field[new[0],new[1]] == 1 and new not in visit:
+                visit.append(new)
+                queue.append(new)
+                count += 1
+    queue.append((field.shape[0]+1,0))
+    while len(queue) > 0:
+        y, x = queue.popleft()
+        for dy, dx in delta:
+            new = (y+dy, x+dx)
+            if 0  <= new[0] < _field.shape[0] and 0 <= new[1] < _field.shape[1] \
+               and _field[new[0],new[1]] == 0 and new not in visit:
+                visit.append(new)
+                queue.append(new)
+                count += 1
+    return (field.shape[0] + 2)*(field.shape[1] + 2) - count
 
 
 class TetrisWrapper(gym.wrappers.FlattenObservation):
@@ -185,8 +227,12 @@ class SinglePlayerTetris(gym.Env):
         return state, {}
 
     def _get_obs_from_game(self):
-        field = np.array(self.game.system.field[self.h :], dtype=bool) * 3
+        #field = np.array(self.game.system.field[self.h :], dtype=bool) * 3
         field_with_cur_mino = np.array(self.game.system.field[self.h :], dtype=bool) * 1.0 # 3
+
+        self.agg_height, self.bumpiness = calc_height_bumpiness(field_with_cur_mino)
+        self.holes = count_holes(field_with_cur_mino)
+        print(self.agg_height, self.holes, self.bumpiness)
 
         mino = self.game.system.get_current_mino()
         
@@ -280,11 +326,17 @@ class SinglePlayerTetris(gym.Env):
     def get_all_next_hd(self):
         states = []
         group_actions = []
-        dx = (self.w - 4) // 2
+        dx = self.w // 2
+        visited = []
+        for rot in range(-2, 3):
+            for delta_x in range(-dx, dx+1):
+                mino = self.game.system.get_current_mino()
+                print(mino.center.x, mino.center.y)
+                visited.append([(mino.center.x, mino.center.y, mino.rotation_status)])
         for rot in range(-2, 3):
             for delta_x in range(-dx,dx+1):  
                 # 0: left, 1: right, 2: hard, 3: soft, 4: CCW, 5: CW, #6: noop, 7: hold 
-                _system = deepcopy(self.game.system)
+                _system = self.game.system.copy()
                 actions = []
                 if rot < 0:
                     for _ in range(-rot):
@@ -306,10 +358,9 @@ class SinglePlayerTetris(gym.Env):
                 _system.fast_soft_drop()
                 ny = _system.get_current_mino().center.y
                 actions.extend([3] * int(y - ny))
-                visited = []
                 _recur_search_pos(_system, actions, None, visited, states, group_actions)
 
-                _system = deepcopy(self.game.system)
+                _system = self.game.system.copy()
                 _system.hold()
                 actions = [6]
                 if rot < 0:
@@ -332,7 +383,6 @@ class SinglePlayerTetris(gym.Env):
                 _system.fast_soft_drop()
                 ny = _system.get_current_mino().center.y
                 actions.extend([3] * int(y - ny))
-                visited = []
                 _recur_search_pos(_system, actions, None, visited, states, group_actions)
 
         return states, group_actions

@@ -14,8 +14,8 @@ def get_args():
                         help='Number of workers to use (default: 8)')
     parser.add_argument('--subproc', action='store_true', default=False,
                         help='Use multiprocessing for environments(default: False)')
-    parser.add_argument('--num-step', type=int, default=4096,
-                        help='Number of forward steps (default: 4096)')
+    parser.add_argument('--num-step', type=int, default=2048,
+                        help='Number of forward steps (default: 2048)')
     parser.add_argument('--eps', type=float, default=0.2,
                         help='Epsilon (default: 0.2)')
     parser.add_argument('--ext-gamma', type=float, default=0.999,
@@ -30,8 +30,8 @@ def get_args():
                         help='Use GPU training (default: False)')
     parser.add_argument('--noisy', action='store_true', default=False,
                         help='Use NoisyNet (default: False)')
-    parser.add_argument('--epoch', type=int, default=4,
-                        help='number of epochs (default: 4)')
+    parser.add_argument('--epoch', type=int, default=10,
+                        help='number of epochs (default: 10)')
     parser.add_argument('--num-episode', type=int, default=1250,
                         help='number of episodes (default: 1250)')
     parser.add_argument('--mini-batch', type=int, default=64,

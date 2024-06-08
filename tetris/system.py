@@ -4,7 +4,6 @@ from random import choice
 from .configuration import *
 from collections import deque
 import random
-from copy import deepcopy
 
 
 class System:
@@ -357,8 +356,8 @@ class System:
         empty_dir = []
         for dpos in self._tspin_check_dirs[mino_rot]:
             npos: Pos = mino_pos + dpos
-            status1 = self._is_over_y_boundary(npos)
-            status2 = self._is_over_x_boundary(npos)
+            status1 = self._is_over_y_boundary(npos.y)
+            status2 = self._is_over_x_boundary(npos.x)
             if status1 or status2 or self._is_field_filled(npos):
                 corners.append(1)
             else:
@@ -395,16 +394,16 @@ class System:
         return 0
 
     def _tspin_hole(self, block):
-        status1 = self._is_over_y_boundary(block)
-        status2 = self._is_over_x_boundary(block)
+        status1 = self._is_over_y_boundary(block.y)
+        status2 = self._is_over_x_boundary(block.x)
         if not (status1 or status2 or self._is_field_filled(block)):
             # block is filled...
             return False  # Not a Hole
 
         for dx, dy in [(+1, 0), (-1, 0), (0, +1), (0, -1)]:
             npos = block + (dx, dy)
-            status1 = self._is_over_y_boundary(npos)
-            status2 = self._is_over_x_boundary(npos)
+            status1 = self._is_over_y_boundary(npos.y)
+            status2 = self._is_over_x_boundary(npos.x)
             if not (status1 or status2 or self._is_field_filled(npos)):
                 return False  # not filled -> Open!
         return True  # Hole!!
@@ -573,8 +572,8 @@ class System:
     def _is_enable_rotation_offset(self, blocks, rotate_offset_option):
         for block in blocks:
             block.add(rotate_offset_option)
-            status1 = self._is_over_y_boundary(block)
-            status2 = self._is_over_x_boundary(block)
+            status1 = self._is_over_y_boundary(block.y)
+            status2 = self._is_over_x_boundary(block.x)
             if status1 or status2 or self._is_field_filled(block):
                 return False
         return True
@@ -693,24 +692,22 @@ class System:
         self._timeout_enable_land = False
 
     def _is_enable_move_y(self):
-        for block in deepcopy(self.curr_mino.blocks):
-            block.y += 1
-            if self._is_over_y_boundary(block) or self._is_field_filled(block):
+        for block in self.curr_mino.blocks:
+            if self._is_over_y_boundary(block.y + 1) or self._is_field_filled(block.x, block.y + 1):
                 return False
         return True
 
     def _is_enable_move_x(self, dx):
-        for block in deepcopy(self.curr_mino.blocks):
-            block.x += dx
-            if self._is_over_x_boundary(block) or self._is_field_filled(block):
+        for block in self.curr_mino.blocks:
+            if self._is_over_x_boundary(block.x + dx) or self._is_field_filled(block.x + dx, block.y):
                 return False
         return True
 
-    def _is_over_y_boundary(self, block):
-        return block.y > self.h + self.h_padding - 1
+    def _is_over_y_boundary(self, y):
+        return y > self.h + self.h_padding - 1
 
-    def _is_over_x_boundary(self, block):
-        return block.x < 0 or block.x > self.w - 1
+    def _is_over_x_boundary(self, x):
+        return x < 0 or x > self.w - 1
 
     def _get_mino(self, mino_num):
         if mino_num is False:
@@ -725,16 +722,23 @@ class System:
         self._curr_mino_num = self._bag.pop(0)
         return deepcopy(self._mino_list[self._curr_mino_num])
 
-    def _is_field_filled(self, block):
-        if block.y < 0 or block.x < 0:
+    def _is_field_filled(self, x, y):
+        if y < 0 or x < 0:
             return False
-        return self.field[block.y][block.x]
+        return self.field[y][x]
 
     def _get_init_mino_pos(self):
         return Pos(self._get_w_center() - 1, self.h_padding)
 
     def _get_w_center(self):
         return self.w // 2
+
+    def copy(self):
+        system = System(self.w, self.h, self.preview_num)
+        system.field = self.field
+        system.curr_mino = self.curr_mino
+
+        return system
 
     @staticmethod
     def _block_rotation(block: Pos, center: Pos, rotation):

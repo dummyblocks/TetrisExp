@@ -255,8 +255,9 @@ class PPO:
                 self.optimizer.zero_grad()
                 loss = actor_loss + self.v_coef * critic_loss + self.ent_coef * entropy_bonus
                 loss.backward()
+                nn.utils.clip_grad_norm_(self.model.parameters(), 0.5)
                 self.optimizer.step()
-
+                
                 actor_losses.append(actor_loss.item())
                 critic_losses.append(critic_loss.item())
                 entropy_bonuses.append(-entropy_bonus.item())
@@ -305,6 +306,8 @@ class PPO:
                 self.rnd_optimizer.zero_grad()
                 loss = actor_loss + self.v_coef * critic_loss + self.ent_coef * entropy_bonus + forward_loss
                 loss.backward()
+                nn.utils.clip_grad_norm_(self.model.parameters(), 0.5)
+                nn.utils.clip_grad_norm_(self.rnd.parameters(), 0.5)
                 self.rnd_optimizer.step()
                 self.optimizer.step()
 

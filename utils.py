@@ -47,7 +47,16 @@ def parse_dict(state_dicts, use_smirl):
         result.append(torch.Tensor(state_dicts[:, 460:961]) if use_smirl else None)
     
     return tuple(result)
+
+def parse_dict_simple(state_dicts, use_smirl):
+    # state_dicts is in shape of (~, 8 + 400 + 2 + 4 + 7 + 35 + 4)
+    hold = torch.Tensor(state_dicts[:, :8])
+    img = torch.Tensor(state_dicts[:, 8:408].reshape([-1, 1, 20, 20]))
+    except_hold = torch.Tensor(state_dicts[:, 408:460])
+    smirl = torch.Tensor(state_dicts[:, 460:]) if use_smirl else None
     
+    return img, torch.cat((hold, except_hold), dim=1), smirl
+  
 
 class RunningMeanStd:
     def __init__(self, epsilon=1e-4, shape=()):

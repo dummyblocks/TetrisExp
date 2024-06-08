@@ -1,6 +1,5 @@
 from multiprocessing import Process, Pipe
 import numpy as np
-from copy import deepcopy
 
 def worker(remote, parent_remote, env):
     parent_remote.close()
