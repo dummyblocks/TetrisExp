@@ -348,12 +348,11 @@ class TetrisQ(nn.Module):
         self.imhps_feature = linear(128 + 128 + 4, 256)
         #self.imhps_feature = linear(128 + 7 + 4 + 2 + 8 + 35 + 4, 256)
 
-        self.extra_layer = nn.Sequential(
+        self.critic = nn.Sequential(
             linear(256, 256),
             nn.ReLU(),
+            linear(256, 7)
         )
-
-        self.critic = linear(256, 7)
 
         self.use_smirl = use_smirl
         if use_smirl:
@@ -385,20 +384,10 @@ class TetrisQ(nn.Module):
         nn.init.orthogonal_(self.imhps_feature.weight, 0.01)
         self.imhps_feature.bias.data.zero_()
 
-        nn.init.orthogonal_(self.critic_ext.weight, 0.01)
-        self.critic_ext.bias.data.zero_()
-        nn.init.orthogonal_(self.critic_int.weight, 0.01)
-        self.critic_int.bias.data.zero_()
-
-        for i in range(len(self.actor)):
-            if type(self.actor[i]) == nn.Linear:
-                nn.init.orthogonal_(self.actor[i].weight, 0.01)
-                self.actor[i].bias.data.zero_()
-
-        for i in range(len(self.extra_layer)):
-            if type(self.extra_layer[i]) == nn.Linear:
-                nn.init.orthogonal_(self.extra_layer[i].weight, 0.1)
-                self.extra_layer[i].bias.data.zero_()
+        for i in range(len(self.critic)):
+            if type(self.critic[i]) == nn.Linear:
+                nn.init.orthogonal_(self.critic[i].weight, 0.1)
+                self.critic[i].bias.data.zero_()
 
     def best_state(self, states, grouped_actions):
         '''
@@ -411,8 +400,7 @@ class TetrisQ(nn.Module):
             return random.choice(list(zip(states, grouped_actions)))
         else:
             for state, actions in zip(states, grouped_actions):
-                _, ve, vi, _, _, _ = self.forward(np.array(state).reshape([1,self.input_size]))
-                value = ve + vi
+                value = self.forward(np.array(state).reshape([1,self.input_size])).sum()
                 if not max_value or value > max_value:
                     max_value = value
                     best_state = state
@@ -424,22 +412,23 @@ class TetrisQ(nn.Module):
         img, mino_pos, mino_rot, mino, hold, preview, status, smirl = parse_dict(s, self.use_smirl)
         #img, others, smirl = parse_dict_simple(s, self.use_smirl)
         
-        img_feature = self.img_feature(img)
-        mino_feature = F.relu(self.mino_feature(torch.cat((mino, mino_rot),dim=1)) + \
-                              self.encode(torch.cat((img_feature, mino_pos),dim=1)))
-        hold_feature = F.relu(self.hold_feature(hold))
-        preview_feature = F.relu(self.preview_feature(preview))
+        img_feature = self.img_feature(img.reshape([-1,1,20,20]))
+        mino_feature = F.relu(self.mino_feature(torch.cat((mino.reshape([-1,7]), 
+                                                           mino_rot.reshape([-1,4])),dim=1)) + \
+                              self.encode(torch.cat((img_feature, mino_pos.reshape([-1,2])),dim=1)))
+        hold_feature = F.relu(self.hold_feature(hold.reshape([-1,8])))
+        preview_feature = F.relu(self.preview_feature(preview.reshape([-1,35])))
         
         mhp_feature = F.relu(self.mhp_feature(
                         torch.cat((mino_feature, hold_feature, preview_feature),dim=1)
                         ))
         if self.use_smirl:
             imhps_feature = F.relu(self.imhps_feature(
-                        torch.cat((img_feature, mhp_feature, status),dim=1)
-                        ) + self.smirl_feature(smirl))
+                        torch.cat((img_feature, mhp_feature, status.reshape([-1,4])),dim=1)
+                        ) + self.smirl_feature(smirl.reshape([-1,401])))
         else:
             imhps_feature = F.relu(self.imhps_feature(
-                        torch.cat((img_feature, mhp_feature, status),dim=1)
+                        torch.cat((img_feature, mhp_feature, status.reshape([-1,4])),dim=1)
                         ))
         #imhps_feature = F.relu(self.imhps_feature(
         #            torch.cat((img_feature, others),dim=1)

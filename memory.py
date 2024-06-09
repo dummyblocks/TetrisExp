@@ -87,9 +87,8 @@ class ReplayBuffer:
             batch = random.sample(self.buffer, self.count)
         else:
             batch = random.sample(self.buffer, batch_size)
-
         s = torch.Tensor(np.array([i[0] for i in batch]))
-        a = torch.Tensor(np.array([i[1] for i in batch]))
+        a = torch.Tensor(np.array([[i[1]] for i in batch]))
         r = torch.Tensor(np.array([[i[2]] for i in batch]))
         ns = torch.Tensor(np.array([i[3] for i in batch]))
         done = torch.Tensor(np.array([[i[4]] for i in batch]))

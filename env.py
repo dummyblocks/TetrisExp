@@ -172,6 +172,7 @@ class TetrisWrapper(gym.wrappers.FlattenObservation):
 
 class SinglePlayerTetris(gym.Env):
 
+    name = 'SinglePlayerTetris'
     metadata = {"render_modes": ["human"], "render_fps": 60}
 
     def __init__(self, render_mode=None, fps=3, fast_soft=True, draw_ghost=True,
@@ -352,7 +353,7 @@ class SinglePlayerTetris(gym.Env):
             False, {'episode_len': self.ep_len, 'episode_reward': self.ep_reward, 'score': self.game.system.total_score}
 
     def get_reward(self):
-        return 4 * (self.last_line_cleared + self.last_lines_sent) ** 1.5 # + self.game.system.outgoing_linedown_send()*0.1
+        return 4 * (self.last_line_cleared + self.last_lines_sent) ** 1.5 + self.game.system.outgoing_linedown_send()*0.1
         return (self.last_line_cleared + self.last_lines_sent) ** 2 #+ self.game.system.outgoing_linedown_send()*0.25
     
     def get_all_next_hd(self):

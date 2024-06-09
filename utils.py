@@ -34,6 +34,16 @@ def parse_dict(state_dicts, use_smirl):
         status = np.stack([state['status'] for state in state_dicts])
         result.extend([img, mino_pos, mino_rot, mino, hold, preview, status])
         result.append(np.stack([state['smirl'] for state in state_dicts]) if use_smirl else None)
+    elif len(state_dicts.shape) == 1:
+        hold = torch.Tensor(state_dicts[:8])
+        img = torch.Tensor(state_dicts[8:408].reshape([1, 20, 20]))
+        mino = torch.Tensor(state_dicts[408:415])
+        mino_pos = torch.Tensor(state_dicts[415:417])
+        mino_rot = torch.Tensor(state_dicts[417:421])
+        preview = torch.Tensor(state_dicts[421:456])
+        status = torch.Tensor(state_dicts[456:460])
+        result.extend([img, mino_pos, mino_rot, mino, hold, preview, status])
+        result.append(torch.Tensor(state_dicts[460:961]) if use_smirl else None)
     else:
         # state_dicts is in shape of (~, 400 + 2 + 1 + 7 + 7 + 35 + 4)
         hold = torch.Tensor(state_dicts[:, :8])
